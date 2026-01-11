@@ -1,0 +1,4 @@
+networkx>=3.6.1
+
+# Optional (stronger semantic similarity, no API key required but downloads a model):
+# sentence-transformers>=3.0.0
