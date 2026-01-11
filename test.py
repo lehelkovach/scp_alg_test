@@ -503,13 +503,21 @@ class HyperKB:
         self,
         claim: Claim,
         top_k: int = 3,
-        threshold: float = 0.0
-    ) -> List[Tuple[float, Tuple[str, str, str], str]]:
+        threshold: float = 0.0,
+        min_subject_sim: float = 0.5
+    ) -> List[Tuple[float, Tuple[str, str, str], str, Dict[str, float]]]:
         """
         Find soft matches using embeddings or string similarity.
         
+        Args:
+            claim: The claim to match
+            top_k: Number of top matches to return
+            threshold: Minimum overall score threshold
+            min_subject_sim: Minimum subject similarity required for soft match
+                            (prevents false attribution hallucinations)
+        
         Returns:
-            List of (score, (s, p, o), relation_id) sorted by score descending.
+            List of (score, (s, p, o), relation_id, component_scores) sorted by score descending.
         """
         matches = []
         
@@ -524,14 +532,53 @@ class HyperKB:
                 p_sim = self.backend.text_similarity(claim.predicate, p)
                 o_sim = self.backend.text_similarity(claim.obj, o)
             
+            component_scores = {"subject": s_sim, "predicate": p_sim, "object": o_sim}
+            
             # Weighted combination (predicate matters most)
             score = (0.30 * s_sim) + (0.45 * p_sim) + (0.25 * o_sim)
             
             if score >= threshold:
-                matches.append((score, (s, p, o), r_id))
+                matches.append((score, (s, p, o), r_id, component_scores))
         
         matches.sort(key=lambda x: x[0], reverse=True)
         return matches[:top_k]
+    
+    def find_false_attributions(
+        self,
+        claim: Claim,
+        min_predicate_obj_sim: float = 0.7,
+        max_subject_sim: float = 0.6
+    ) -> List[Tuple[str, str, str, str, Dict[str, float]]]:
+        """
+        Find facts where predicate+object match but subject doesn't.
+        
+        This catches "false attribution" hallucinations like:
+        - "Edison invented the telephone" (should be Bell)
+        - "Marie Curie discovered gravity" (should be Newton)
+        
+        Returns:
+            List of (s, p, o, relation_id, component_scores) for false attributions.
+        """
+        false_attributions = []
+        
+        for s, p, o, r_id in self.iter_facts():
+            if isinstance(self.backend, StringSimilarityBackend):
+                s_sim = self.backend.text_similarity(claim.subject, s)
+                p_sim = self.backend.text_similarity(claim.predicate, p)
+                o_sim = self.backend.text_similarity(claim.obj, o)
+            else:
+                s_sim = self.backend.text_similarity(claim.subject, s)
+                p_sim = self.backend.text_similarity(claim.predicate, p)
+                o_sim = self.backend.text_similarity(claim.obj, o)
+            
+            # High predicate+object similarity but low subject similarity = false attribution
+            pred_obj_sim = (0.6 * p_sim) + (0.4 * o_sim)
+            
+            if pred_obj_sim >= min_predicate_obj_sim and s_sim < max_subject_sim:
+                component_scores = {"subject": s_sim, "predicate": p_sim, "object": o_sim}
+                false_attributions.append((s, p, o, r_id, component_scores))
+        
+        return false_attributions
     
     def find_contradictions(self, claim: Claim) -> List[Tuple[str, str, str, str]]:
         """
@@ -698,11 +745,49 @@ class SCPProber:
                     metadata={"contradictions": contradictions}
                 )
         
-        # 3. Check for soft matches
+        # 3. Check for false attributions (BEFORE soft match!)
+        # This catches hallucinations like "Edison invented the telephone" when Bell did
+        false_attributions = self.kb.find_false_attributions(claim)
+        if false_attributions:
+            # Found a fact with matching predicate+object but wrong subject
+            s, p, o, r_id, comp_scores = false_attributions[0]
+            return ProbeResult(
+                claim=claim,
+                verdict=Verdict.FAIL,
+                score=0.0,
+                matched_facts=[(s, p, o)],
+                reason=f"False attribution: KB has ({s}) --[{p}]--> ({o}), not ({claim.subject}).",
+                metadata={
+                    "match_type": "false_attribution",
+                    "correct_subject": s,
+                    "claimed_subject": claim.subject,
+                    "component_scores": comp_scores,
+                    "relation_id": r_id
+                }
+            )
+        
+        # 4. Check for soft matches
         soft_matches = self.kb.find_soft_matches(claim, top_k=3, threshold=self.soft_threshold)
         
         if soft_matches:
-            best_score, best_fact, best_rel_id = soft_matches[0]
+            best_score, best_fact, best_rel_id, comp_scores = soft_matches[0]
+            
+            # Additional check: require minimum subject similarity for soft pass
+            # This prevents false attributions from slipping through
+            if comp_scores["subject"] < 0.5:
+                return ProbeResult(
+                    claim=claim,
+                    verdict=Verdict.FAIL,
+                    score=best_score,
+                    matched_facts=[best_fact],
+                    reason=f"Subject mismatch: claim subject '{claim.subject}' doesn't match '{best_fact[0]}' (sim={comp_scores['subject']:.3f}).",
+                    metadata={
+                        "match_type": "subject_mismatch",
+                        "component_scores": comp_scores,
+                        "relation_id": best_rel_id
+                    }
+                )
+            
             proof = self.kb.get_proof_subgraph([best_rel_id])
             
             return ProbeResult(
@@ -715,11 +800,12 @@ class SCPProber:
                 metadata={
                     "match_type": "soft",
                     "relation_id": best_rel_id,
-                    "all_matches": [(s, (f[0], f[1], f[2]), r) for s, f, r in soft_matches]
+                    "component_scores": comp_scores,
+                    "all_matches": [(s, (f[0], f[1], f[2]), r) for s, f, r, _ in soft_matches]
                 }
             )
         
-        # 4. No match found
+        # 5. No match found
         # Still get closest match for context
         closest = self.kb.find_soft_matches(claim, top_k=1, threshold=0.0)
         closest_info = closest[0] if closest else None
@@ -732,7 +818,7 @@ class SCPProber:
             reason="No supporting fact found in KB.",
             metadata={
                 "match_type": "none",
-                "closest_match": closest_info if closest_info else None
+                "closest_match": (closest_info[0], closest_info[1], closest_info[2]) if closest_info else None
             }
         )
     
@@ -794,14 +880,18 @@ def export_proof_to_json(subgraph: nx.DiGraph) -> Dict[str, Any]:
 def demo():
     """Run a demonstration of the SCP system."""
     
+    print("=" * 80)
+    print("SCP (Symbolic Consistency Probing) - Hallucination Detection Demo")
+    print("=" * 80)
+    print()
     print("Initializing SCP system...")
     
     # Choose embedding backend
     if EMBEDDINGS_AVAILABLE:
-        print("Using SentenceTransformer embeddings")
+        print("✓ Using SentenceTransformer embeddings (all-MiniLM-L6-v2)")
         backend = SentenceTransformerBackend("all-MiniLM-L6-v2")
     else:
-        print("Using string similarity (install sentence-transformers for better results)")
+        print("⚠ Using string similarity (install sentence-transformers for better results)")
         backend = StringSimilarityBackend()
     
     # Create KB
@@ -817,12 +907,14 @@ def demo():
         ("Charles Darwin", "proposed", "the theory of evolution"),
         ("Marie Curie", "discovered", "radium"),
         ("Marie Curie", "born_in", "Poland"),
+        ("Isaac Newton", "discovered", "gravity"),
+        ("Alexander Graham Bell", "invented", "the telephone"),
         ("Python", "created_by", "Guido van Rossum"),
         ("The Great Wall", "located_in", "China"),
         ("Tokyo", "is_capital_of", "Japan"),
     ]
     kb.add_facts_bulk(facts, source="seed_data", confidence=0.95)
-    print(f"KB stats: {kb.stats()}")
+    print(f"✓ KB loaded: {kb.stats()}")
     
     # Create prober
     prober = SCPProber(
@@ -831,38 +923,59 @@ def demo():
         soft_threshold=0.70
     )
     
-    # Test cases
-    test_texts = [
-        # Should PASS (exact)
-        "The Eiffel Tower is located in Paris.",
+    # Test cases with descriptions
+    test_cases = [
+        # (text, expected_outcome, description)
+        ("The Eiffel Tower is located in Paris.",
+         "PASS", "Exact match - should pass"),
         
-        # Should SOFT_PASS (similar but not exact)
-        "Einstein discovered relativity.",
+        ("Einstein discovered relativity.",
+         "SOFT_PASS", "Semantic match - similar wording"),
         
-        # Should FAIL (hallucination)
-        "The Eiffel Tower is located in London.",
+        ("The Eiffel Tower is located in London.",
+         "CONTRADICT", "Direct contradiction - Eiffel Tower is in Paris"),
         
-        # Should CONTRADICT (directly conflicts)
-        "Albert Einstein was born in France.",
+        ("Albert Einstein was born in France.",
+         "CONTRADICT", "Wrong country - Einstein was born in Germany"),
         
-        # Multiple claims
-        "Marie Curie discovered radium. She was born in Poland. She invented the telephone.",
+        ("Thomas Edison invented the telephone.",
+         "FAIL", "FALSE ATTRIBUTION - Bell invented the telephone, not Edison"),
+        
+        ("Marie Curie discovered radium. She invented the telephone.",
+         "MIXED", "One correct claim + one hallucination"),
     ]
     
     print("\n" + "=" * 80)
-    print("RUNNING PROBES")
+    print("HALLUCINATION DETECTION TESTS")
     print("=" * 80)
     
-    for text in test_texts:
+    for text, expected, description in test_cases:
+        print(f"\n>>> Testing: {description}")
+        print(f"    Input: \"{text}\"")
+        print(f"    Expected: {expected}")
         report = prober.probe(text)
         pretty_print_report(report)
-        print()
+    
+    # Demo: False attribution detection
+    print("\n" + "=" * 80)
+    print("FALSE ATTRIBUTION DETECTION (Key Feature)")
+    print("=" * 80)
+    print("""
+The algorithm detects 'false attribution' hallucinations where:
+- The predicate and object match a known fact
+- But the subject is WRONG
+
+Example: "Edison invented the telephone" is FALSE because
+- KB knows: Bell invented the telephone
+- Predicate+Object match (invented + telephone)
+- But subject (Edison ≠ Bell) doesn't match → FAIL
+""")
     
     # Show JSON export
     print("\n" + "=" * 80)
-    print("SAMPLE JSON EXPORT")
+    print("JSON EXPORT EXAMPLE")
     print("=" * 80)
-    report = prober.probe(test_texts[0])
+    report = prober.probe("Einstein discovered relativity.")
     print(report.to_json())
 
 
