@@ -19,8 +19,7 @@ scp_alg_test/
 │   ├── wikidata_verifier.py    # External KB (WEAK coverage - 38/100)
 │   ├── hallucination_strategies.py  # LLM-based strategies
 │   ├── verified_memory.py      # Caching layer (GOOD coverage - 70/100)
-│   ├── ksg_ground_truth.py     # KnowShowGo integration (unavailable)
-│   ├── ksg_integration.py      # KnowShowGo examples
+│   ├── ksg.py                  # KnowShowGo integration (unavailable - needs server)
 │   ├── benchmark.py            # MAIN TEST RUNNER - run this first
 │   └── test_scp.py             # 53 unit tests
 │
