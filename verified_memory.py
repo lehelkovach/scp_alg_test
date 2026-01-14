@@ -31,28 +31,18 @@ from typing import List, Dict, Optional, Callable, Tuple, Any
 from enum import Enum
 from pathlib import Path
 
-# Import SCP prober for hallucination detection
+# Import SCP prover for hallucination detection
 try:
-    from .scp import (
+    from scp import (
         HyperKB, SCPProber, RuleBasedExtractor, Claim, Verdict,
         StringSimilarityBackend, EMBEDDINGS_AVAILABLE
     )
     if EMBEDDINGS_AVAILABLE:
-        from .scp import SentenceTransformerBackend
+        from scp import SentenceTransformerBackend
     SCP_AVAILABLE = True
 except ImportError:
-    try:
-        # Fallback for direct execution
-        from scp import (
-            HyperKB, SCPProber, RuleBasedExtractor, Claim, Verdict,
-            StringSimilarityBackend, EMBEDDINGS_AVAILABLE
-        )
-        if EMBEDDINGS_AVAILABLE:
-            from scp import SentenceTransformerBackend
-        SCP_AVAILABLE = True
-    except ImportError:
-        SCP_AVAILABLE = False
-        print("Warning: SCP module not available. Install dependencies: pip install networkx numpy")
+    SCP_AVAILABLE = False
+    print("Warning: SCP module not available. Install dependencies: pip install networkx numpy")
 
 
 # =============================================================================

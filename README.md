@@ -12,159 +12,133 @@ A comprehensive toolkit for detecting hallucinations in Large Language Model (LL
 # Install dependencies
 pip install -r requirements.txt
 
-# Run all tests
+# Run all solution comparisons
 python run_tests.py --verbose
 
-# Run specific solution
-python run_tests.py --solution wikidata
+# Run unit tests (53 tests)
+pytest tests/test_scp.py -v
 
 # Run demos
-python solutions/scp/scp_prover.py
-python solutions/wikidata/wikidata_prover.py
+python tests/demos.py           # All demos
+python tests/demos.py scp       # SCP demo
+python tests/demos.py wikidata  # Wikidata demo
 ```
-
-## Solutions Overview
-
-| Solution | Speed | API Calls | Accuracy | Best For |
-|----------|-------|-----------|----------|----------|
-| **SCP** | ~10ms | 0 | Limited by KB | High-volume, known domains |
-| **Wikidata** | ~200ms | 0* | High | General facts, no setup |
-| **LLM Judge** | ~200ms | 1 | Medium | Quick checks |
-
-*Wikidata is a free public API
-
-### SCP Modes
-
-The SCP solution includes three modes in one unified module:
-
-| Mode | Use Case |
-|------|----------|
-| KB Mode | Verify against pre-built knowledge base |
-| Context Mode | RAG faithfulness checking |
-| API Mode | REST service for continuous verification |
 
 ## Repository Structure
 
 ```
 scp_alg_test/
-├── README.md                    # This file
-├── requirements.txt             # Dependencies
-├── run_tests.py                 # Main test runner [Opus4.5]
+├── scp.py                   # Core SCP hallucination prover
+├── wikidata_verifier.py     # Wikidata API verification (100M+ facts)
+├── hallucination_strategies.py  # LLM-based strategies
+├── verified_memory.py       # Verification + caching layer
+├── ksg_ground_truth.py      # KnowShowGo ground truth
+├── ksg_integration.py       # KnowShowGo REST client
 │
-├── lib/                         # Core library implementations
-│   ├── __init__.py
-│   ├── scp.py                  # SCP hallucination prover
-│   ├── wikidata_verifier.py    # Wikidata API integration
-│   ├── verified_memory.py      # Verification + caching
-│   ├── hallucination_strategies.py  # Strategy comparison
-│   ├── ksg_ground_truth.py     # KnowShowGo architecture
-│   └── ksg_integration.py      # KnowShowGo REST client
+├── tests/
+│   ├── test_scp.py         # 53 unit tests
+│   └── demos.py            # Demo scripts for all methods
 │
-├── solutions/                   # Organized solution implementations
-│   ├── scp/                    # Knowledge Base verification
-│   │   └── scp_prover.py      # KB, Context, and API modes
-│   ├── wikidata/               # External knowledge graph
-│   │   └── wikidata_prover.py
-│   └── llm/                    # LLM-based approaches
-│       └── llm_judge.py
+├── docs/
+│   ├── opus.txt            # Design decisions
+│   ├── external_dependencies.txt
+│   ├── knowshowgo_integration_spec.md
+│   └── ...
 │
-├── tests/                       # Test files
-│   ├── test_scp.py             # Unit tests
-│   └── demo_scp.py             # Demo script
-│
-└── docs/                        # Documentation
-    ├── opus.txt                # Design decisions [Opus4.5]
-    ├── gemini.txt              # Previous session notes
-    ├── neuro_symbolic_architecture.py  # Architecture analysis
-    └── ksg_architecture.py     # KnowShowGo reference
+├── run_tests.py            # Solution comparison runner
+├── requirements.txt        # Dependencies
+└── README.md
 ```
+
+## Solutions Overview
+
+| Solution | Speed | API Calls | Best For |
+|----------|-------|-----------|----------|
+| **SCP** | ~10ms | 0 | High-volume, known domains |
+| **Wikidata** | ~200ms | 0* | General facts, no setup |
+| **LLM Judge** | ~200ms | 1 | Quick checks |
+
+*Wikidata is a free public API
 
 ## Algorithm Explanations
 
 ### 1. SCP (Symbolic Consistency Probing)
 
-Unified hallucination detection with three modes:
+Verifies claims against a knowledge base using semantic similarity.
 
-**KB Mode:** Verify against pre-built knowledge base
-- Build KB from facts: `prover.add_facts([("Bell", "invented", "telephone")])`
-- Verify claims: `prover.verify("Edison invented telephone")` → refuted
+```python
+from scp import HyperKB, SCPProber, RuleBasedExtractor, HashingEmbeddingBackend
 
-**Context Mode:** RAG faithfulness checking (zero external dependencies)
-- Check LLM output against source document
-- Detects: Extrinsic (added info), Intrinsic (contradictions)
+# Create KB
+kb = HyperKB(embedding_backend=HashingEmbeddingBackend(dim=512))
+kb.add_facts_bulk([("Bell", "invented", "telephone")])
 
-**API Mode:** REST service
-- `POST /ingest` - Add facts to KB
-- `POST /verify` - Verify answer
-- `GET /stats` - KB statistics
+# Create prober
+prober = SCPProber(kb=kb, extractor=RuleBasedExtractor())
 
-Speed: ~10ms | API Calls: 0
+# Verify claim
+report = prober.probe("Edison invented the telephone")
+print(report.results[0].verdict)  # FAIL or CONTRADICT
+```
+
+**Verdicts:** PASS, SOFT_PASS, FAIL, CONTRADICT, UNKNOWN
 
 ### 2. Wikidata Verification
 
 Queries Wikidata's 100M+ facts via SPARQL.
-- **Speed:** ~200ms | **API Calls:** 0 (free public API)
-- **No setup required** - instant access to structured knowledge
+
+```python
+from wikidata_verifier import WikidataVerifier
+
+verifier = WikidataVerifier()
+result = verifier.verify("Bell invented the telephone")
+print(result.status)  # VERIFIED
+```
 
 ### 3. LLM-as-Judge
 
 Uses an LLM to verify claims.
-- **Speed:** ~200ms | **API Calls:** 1
-- **Strategies:** Single judge, self-consistency, cross-model
 
-## Usage Examples
-
-### Basic KB Verification
 ```python
-from solutions.scp import SCPKBProver
+from hallucination_strategies import LLMJudgeStrategy, mock_llm
 
-prover = SCPKBProver()
-prover.add_facts([("Bell", "invented", "telephone")])
-
-result = prover.verify("Edison invented the telephone")
-print(result["status"])  # "refuted"
+judge = LLMJudgeStrategy(mock_llm)  # Replace with real LLM
+result = judge.check("Edison invented the telephone")
+print(result.verdict)  # FAIL
 ```
 
-### RAG Faithfulness
-```python
-from solutions.scp import check_faithfulness
+## Running Tests
 
-context = "Revenue increased 15%. CEO Jane Doe announced partnership."
-answer = "Revenue went up 15% and stock rose 10%."  # Hallucination!
-
-report, hallucinations = check_faithfulness(context, answer)
-# hallucinations = [Claim about stock - not in context]
-```
-
-### Wikidata Verification
-```python
-from solutions.wikidata import WikidataVerifier
-
-verifier = WikidataVerifier()
-result = verifier.verify("Edison invented the telephone")
-print(result.status)  # REFUTED
-```
-
-### API Service
 ```bash
-uvicorn solutions.scp.scp_prover:app --port 8000
+# Unit tests (53 tests)
+pytest tests/test_scp.py -v
 
-# Ingest facts
-curl -X POST http://localhost:8000/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Bell invented the telephone."}'
+# Solution comparison
+python run_tests.py --verbose
 
-# Verify claims
-curl -X POST http://localhost:8000/verify \
-  -H "Content-Type: application/json" \
-  -d '{"answer_text": "Edison invented the telephone."}'
+# Specific solution
+python run_tests.py --solution wikidata
 ```
+
+## Test Coverage
+
+| Test Class | Tests | Coverage |
+|------------|-------|----------|
+| TestClaim | 4 | Claim dataclass |
+| TestRuleBasedExtractor | 8 | Claim extraction |
+| TestHyperKB | 9 | Knowledge base |
+| TestEmbeddingBackends | 6 | Similarity matching |
+| TestSCPProber | 11 | Core prober |
+| TestVerdictScenarios | 4 | Verdict types |
+| TestEdgeCases | 5 | Edge cases |
+| TestFalseAttribution | 4 | Attribution errors |
+| TestCoreference | 2 | Pronoun handling |
 
 ## Authorship
 
 - **Author:** Lehel Kovach
 - **AI Assistant:** Claude Opus 4.5 (Anthropic)
-- All Opus 4.5 commits tagged with `[Opus4.5]` prefix
+- All commits tagged with `[Opus4.5]`
 
 ## License
 

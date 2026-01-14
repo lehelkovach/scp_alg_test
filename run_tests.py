@@ -65,24 +65,38 @@ def run_scp(claims, verbose=False):
     print("SOLUTION: SCP (Knowledge Base)")
     print("=" * 60)
     
-    from solutions.scp import SCPKBProver
+    from scp import (
+        HyperKB, SCPProber, RuleBasedExtractor, 
+        HashingEmbeddingBackend, Verdict
+    )
     
-    prover = SCPKBProver()
-    prover.add_facts([
+    # Create prover
+    backend = HashingEmbeddingBackend(dim=512)
+    kb = HyperKB(embedding_backend=backend)
+    kb.add_facts_bulk([
         ("Alexander Graham Bell", "invented", "the telephone"),
         ("Albert Einstein", "discovered", "the theory of relativity"),
         ("Marie Curie", "discovered", "radium"),
         ("The Eiffel Tower", "located_in", "Paris"),
         ("Python", "created_by", "Guido van Rossum"),
     ])
+    prober = SCPProber(kb=kb, extractor=RuleBasedExtractor(), soft_threshold=0.7)
     
     results = []
     for claim, expected in claims:
         start = time.perf_counter()
-        result = prover.verify(claim)
+        report = prober.probe(claim)
         latency = (time.perf_counter() - start) * 1000
         
-        actual = result["status"]
+        if report.results[0].verdict in [Verdict.PASS, Verdict.SOFT_PASS]:
+            actual = "verified"
+        elif report.results[0].verdict == Verdict.CONTRADICT:
+            actual = "refuted"
+        elif report.results[0].verdict == Verdict.FAIL:
+            actual = "refuted"
+        else:
+            actual = "unverifiable"
+        
         passed = actual == expected
         results.append(TestResult(claim, expected, actual, passed, latency))
         
@@ -100,7 +114,7 @@ def run_wikidata(claims, verbose=False):
     print("SOLUTION: Wikidata (100M+ facts)")
     print("=" * 60)
     
-    from solutions.wikidata import WikidataVerifier, VerificationStatus
+    from wikidata_verifier import WikidataVerifier, VerificationStatus
     
     verifier = WikidataVerifier()
     
@@ -134,8 +148,8 @@ def run_llm(claims, verbose=False):
     print("SOLUTION: LLM-as-Judge")
     print("=" * 60)
     
-    from solutions.llm import LLMJudgeStrategy, mock_llm
-    from lib.scp import Verdict
+    from hallucination_strategies import LLMJudgeStrategy, mock_llm
+    from scp import Verdict
     
     judge = LLMJudgeStrategy(mock_llm)
     
