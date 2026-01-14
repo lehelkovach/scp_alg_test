@@ -1,4 +1,20 @@
-networkx>=3.6.1
+# Hallucination Detection System - Dependencies
+# Author: Lehel Kovach
+# AI Assistant: Claude Opus 4.5
 
-# Optional (stronger semantic similarity, no API key required but downloads a model):
-# sentence-transformers>=3.0.0
+# Core dependencies
+networkx>=3.0
+numpy>=1.24
+
+# Optional: Better embeddings (recommended)
+# sentence-transformers>=2.2.0
+
+# Testing
+pytest>=7.0
+
+# API server (optional)
+# fastapi>=0.100.0
+# uvicorn>=0.22.0
+
+# Note: Wikidata integration uses standard library only (urllib, json)
+# Note: LLM integrations bring your own client (openai, anthropic, etc.)

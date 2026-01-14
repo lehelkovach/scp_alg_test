@@ -1,1 +1,6 @@
 __pycache__/
+__pycache__/
+*.pyc
+demo_memory/
+verified_memory/
+wikidata_cache.json
