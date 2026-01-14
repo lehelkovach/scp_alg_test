@@ -33,16 +33,26 @@ from pathlib import Path
 
 # Import SCP prober for hallucination detection
 try:
-    from test import (
+    from .scp import (
         HyperKB, SCPProber, RuleBasedExtractor, Claim, Verdict,
         StringSimilarityBackend, EMBEDDINGS_AVAILABLE
     )
     if EMBEDDINGS_AVAILABLE:
-        from test import SentenceTransformerBackend
+        from .scp import SentenceTransformerBackend
     SCP_AVAILABLE = True
 except ImportError:
-    SCP_AVAILABLE = False
-    print("Warning: SCP module not available. Install dependencies: pip install networkx numpy")
+    try:
+        # Fallback for direct execution
+        from scp import (
+            HyperKB, SCPProber, RuleBasedExtractor, Claim, Verdict,
+            StringSimilarityBackend, EMBEDDINGS_AVAILABLE
+        )
+        if EMBEDDINGS_AVAILABLE:
+            from scp import SentenceTransformerBackend
+        SCP_AVAILABLE = True
+    except ImportError:
+        SCP_AVAILABLE = False
+        print("Warning: SCP module not available. Install dependencies: pip install networkx numpy")
 
 
 # =============================================================================

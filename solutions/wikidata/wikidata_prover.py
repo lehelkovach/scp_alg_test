@@ -17,38 +17,19 @@ HOW IT WORKS:
 3. COMPARE: Check if claimed subject matches Wikidata's answer
 4. VERDICT: VERIFIED if match, REFUTED if different entity found
 
-EXAMPLE:
-    Claim: "Edison invented the telephone"
-    
-    SPARQL Query: "Who invented the telephone?"
-    Wikidata Response: "Alexander Graham Bell"
-    
-    Verdict: REFUTED
-    Reason: "Wikidata shows Bell invented telephone, not Edison"
-
 STRENGTHS:
 - 100M+ facts instantly available
 - No training or setup required
 - Structured data with provenance
 - Free API with good rate limits
-- Always up-to-date
 
 LIMITATIONS:
 - ~200-500ms latency (network call)
-- Rate limited (can be mitigated with caching)
+- Rate limited (mitigated with caching)
 - Limited to facts Wikidata knows
-- English-centric
-
-PREDICATES SUPPORTED:
-- invented, discovered, created (P61 - discoverer/inventor)
-- founded (P112 - founded by)
-- born in (P19 - place of birth)
-- located in (P131 - administrative location)
-- wrote (P50 - author)
-- directed (P57 - director)
 
 USAGE:
-    from wikidata_prover import WikidataVerifier
+    from solutions.wikidata import WikidataVerifier
     
     verifier = WikidataVerifier()
     result = verifier.verify("Edison invented the telephone")
@@ -62,7 +43,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from wikidata_verifier import (
+from lib.wikidata_verifier import (
     WikidataVerifier,
     WikidataResult,
     VerificationStatus,
@@ -103,7 +84,6 @@ def demo():
         print(f"  Status: {result.status.value}")
         print(f"  Confidence: {result.confidence:.0%}")
         print(f"  Reason: {result.reason}")
-        print(f"  Query time: {result.query_time_ms:.0f}ms")
         print()
 
 

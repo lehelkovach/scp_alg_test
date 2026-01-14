@@ -1,9 +1,33 @@
+"""
+SCP Demo Script
+===============
+
+Author: Lehel Kovach
+AI Assistant: Claude Opus 4.5 (Anthropic)
+Repository: https://github.com/lehelkovach/scp_alg_test
+
+Demonstrates the SCP hallucination detection system.
+"""
+
+import sys
+import os
+
+# Add lib to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+__author__ = "Lehel Kovach"
+__ai_assistant__ = "Claude Opus 4.5"
+
+
 def demo():
     """Run a demonstration of the SCP system."""
     
-    print("Initializing SCP system...")
+    print("=" * 70)
+    print("SCP HALLUCINATION DETECTION DEMO")
+    print("Author: Lehel Kovach | AI: Claude Opus 4.5")
+    print("=" * 70)
     
-    from scp import (
+    from lib.scp import (
         EMBEDDINGS_AVAILABLE,
         HashingEmbeddingBackend,
         HyperKB,
@@ -51,19 +75,10 @@ def demo():
     
     # Test cases
     test_texts = [
-        # Should PASS (exact)
-        "The Eiffel Tower is located in Paris.",
-        
-        # Should SOFT_PASS (similar but not exact)
-        "Einstein discovered relativity.",
-        
-        # Should FAIL (hallucination)
-        "The Eiffel Tower is located in London.",
-        
-        # Should CONTRADICT (directly conflicts)
-        "Albert Einstein was born in France.",
-        
-        # Multiple claims
+        "The Eiffel Tower is located in Paris.",  # Should PASS
+        "Einstein discovered relativity.",         # Should SOFT_PASS
+        "The Eiffel Tower is located in London.", # Should FAIL
+        "Albert Einstein was born in France.",    # Should CONTRADICT
         "Marie Curie discovered radium. She was born in Poland. She invented the telephone.",
     ]
     

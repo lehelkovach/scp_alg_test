@@ -21,7 +21,7 @@ VERDICTS:
 - PASS: Exact match found in KB (confidence: 1.0)
 - SOFT_PASS: Semantic match above threshold (confidence: 0.7-0.99)
 - FAIL: No supporting evidence found
-- CONTRADICT: Found evidence that directly conflicts (e.g., "Bell invented X" when claim says "Edison invented X")
+- CONTRADICT: Found evidence that directly conflicts
 
 STRENGTHS:
 - Very fast (~10ms per claim)
@@ -35,7 +35,7 @@ LIMITATIONS:
 - Cannot verify novel/current events
 
 USAGE:
-    from scp_prover import HyperKB, SCPProber, RuleBasedExtractor
+    from solutions.scp import HyperKB, SCPProber, RuleBasedExtractor
     
     kb = HyperKB(embedding_backend=backend)
     kb.add_fact("Bell", "invented", "telephone")
@@ -48,66 +48,36 @@ Dependencies:
     pip install networkx numpy sentence-transformers
 """
 
-# ==============================================================================
-# Original implementation from test.py - see scp.py for full implementation
-# This module re-exports the core SCP components
-# ==============================================================================
-
-from __future__ import annotations
-
 import sys
 import os
-
-# Add parent paths for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-try:
-    from scp import (
-        Verdict,
-        Claim,
-        ProbeResult,
-        SCPReport,
-        EmbeddingBackend,
-        StringSimilarityBackend,
-        SentenceTransformerBackend,
-        HashingEmbeddingBackend,
-        ClaimExtractor,
-        RuleBasedExtractor,
-        LLMExtractor,
-        HybridExtractor,
-        HyperKB,
-        SCPProber,
-        pretty_print_report,
-        export_proof_to_json,
-        EMBEDDINGS_AVAILABLE,
-    )
-except ImportError:
-    # Fallback to local test.py if scp.py not available
-    from test import (
-        Verdict,
-        Claim,
-        ProbeResult,
-        SCPReport,
-        HyperKB,
-        SCPProber,
-        RuleBasedExtractor,
-        StringSimilarityBackend,
-        EMBEDDINGS_AVAILABLE,
-    )
-    if EMBEDDINGS_AVAILABLE:
-        from test import SentenceTransformerBackend
-
+from lib.scp import (
+    Verdict,
+    Claim,
+    ProbeResult,
+    SCPReport,
+    EmbeddingBackend,
+    StringSimilarityBackend,
+    SentenceTransformerBackend,
+    HashingEmbeddingBackend,
+    ClaimExtractor,
+    RuleBasedExtractor,
+    LLMExtractor,
+    HybridExtractor,
+    HyperKB,
+    SCPProber,
+    pretty_print_report,
+    export_proof_to_json,
+    EMBEDDINGS_AVAILABLE,
+)
 
 __all__ = [
-    'Verdict',
-    'Claim', 
-    'ProbeResult',
-    'SCPReport',
-    'HyperKB',
-    'SCPProber',
-    'RuleBasedExtractor',
-    'StringSimilarityBackend',
-    'EMBEDDINGS_AVAILABLE',
+    'Verdict', 'Claim', 'ProbeResult', 'SCPReport',
+    'EmbeddingBackend', 'StringSimilarityBackend', 'SentenceTransformerBackend',
+    'HashingEmbeddingBackend', 'ClaimExtractor', 'RuleBasedExtractor',
+    'LLMExtractor', 'HybridExtractor', 'HyperKB', 'SCPProber',
+    'pretty_print_report', 'export_proof_to_json', 'EMBEDDINGS_AVAILABLE',
 ]
 
 __author__ = "Lehel Kovach"
@@ -139,10 +109,10 @@ def demo():
     
     # Test claims
     test_claims = [
-        "Bell invented the telephone.",        # PASS
-        "Edison invented the telephone.",      # CONTRADICT
-        "Einstein discovered relativity.",     # SOFT_PASS
-        "Newton discovered relativity.",       # CONTRADICT
+        "Bell invented the telephone.",
+        "Edison invented the telephone.",
+        "Einstein discovered relativity.",
+        "Newton discovered relativity.",
     ]
     
     print("\nTesting claims against KB:\n")
@@ -153,7 +123,6 @@ def demo():
             print(f"Claim: {claim}")
             print(f"  Verdict: {r.verdict.value}")
             print(f"  Score: {r.score:.2f}")
-            print(f"  Reason: {r.reason[:60]}...")
             print()
 
 

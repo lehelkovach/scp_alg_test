@@ -22,13 +22,20 @@ from enum import Enum
 from abc import ABC, abstractmethod
 
 # Import from existing SCP implementation
-from test import (
-    Claim, Verdict, HyperKB, SCPProber, RuleBasedExtractor,
-    StringSimilarityBackend, EMBEDDINGS_AVAILABLE
-)
-
-if EMBEDDINGS_AVAILABLE:
-    from test import SentenceTransformerBackend
+try:
+    from .scp import (
+        Claim, Verdict, HyperKB, SCPProber, RuleBasedExtractor,
+        StringSimilarityBackend, EMBEDDINGS_AVAILABLE
+    )
+    if EMBEDDINGS_AVAILABLE:
+        from .scp import SentenceTransformerBackend
+except ImportError:
+    from scp import (
+        Claim, Verdict, HyperKB, SCPProber, RuleBasedExtractor,
+        StringSimilarityBackend, EMBEDDINGS_AVAILABLE
+    )
+    if EMBEDDINGS_AVAILABLE:
+        from scp import SentenceTransformerBackend
 
 
 class Strategy(Enum):
