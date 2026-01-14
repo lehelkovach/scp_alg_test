@@ -37,44 +37,74 @@ __ai_assistant__ = "Claude Opus 4.5"
 
 
 # =============================================================================
-# TEST PARAMETER SETS
+# TEST PARAMETER SETS - Organized by Hallucination Type
 # =============================================================================
 
-# Set 1: Invention/Discovery claims (most common benchmark)
-TEST_SET_INVENTIONS = [
-    ("Alexander Graham Bell invented the telephone.", True),
-    ("Thomas Edison invented the telephone.", False),
-    ("Albert Einstein discovered the theory of relativity.", True),
-    ("Isaac Newton discovered the theory of relativity.", False),
-    ("Marie Curie discovered radium.", True),
-    ("Nikola Tesla discovered radium.", False),
+# Each test is: (claim_text, is_true, hallucination_type)
+# hallucination_type: "true_fact", "false_attribution", "contradiction", "fabrication"
+
+class HallucinationType(Enum):
+    TRUE_FACT = "true_fact"              # Correct, verifiable fact
+    FALSE_ATTRIBUTION = "false_attr"     # Wrong subject for correct predicate/object
+    CONTRADICTION = "contradiction"       # Directly conflicts with known fact
+    FABRICATION = "fabrication"          # Completely made up, not in any KB
+    EXTRINSIC = "extrinsic"              # Added info not supported by source
+
+
+# =============================================================================
+# TEST SET 1: FALSE ATTRIBUTION
+# Tests if algorithm can detect wrong subject attribution
+# e.g., "Edison invented telephone" when Bell did
+# =============================================================================
+TEST_FALSE_ATTRIBUTION = [
+    # (claim, is_true, type)
+    ("Alexander Graham Bell invented the telephone.", True, HallucinationType.TRUE_FACT),
+    ("Thomas Edison invented the telephone.", False, HallucinationType.FALSE_ATTRIBUTION),
+    ("Albert Einstein discovered the theory of relativity.", True, HallucinationType.TRUE_FACT),
+    ("Isaac Newton discovered the theory of relativity.", False, HallucinationType.FALSE_ATTRIBUTION),
+    ("Marie Curie discovered radium.", True, HallucinationType.TRUE_FACT),
+    ("Nikola Tesla discovered radium.", False, HallucinationType.FALSE_ATTRIBUTION),
 ]
 
-# Set 2: Location/Geography claims
-TEST_SET_GEOGRAPHY = [
-    ("The Eiffel Tower is located in Paris.", True),
-    ("The Eiffel Tower is located in London.", False),
-    ("Tokyo is the capital of Japan.", True),
-    ("Tokyo is the capital of China.", False),
-    ("The Great Wall is located in China.", True),
-    ("The Great Wall is located in India.", False),
+# =============================================================================
+# TEST SET 2: CONTRADICTIONS
+# Tests if algorithm can detect claims that contradict known facts
+# e.g., "Einstein was born in France" when he was born in Germany
+# =============================================================================
+TEST_CONTRADICTIONS = [
+    ("Albert Einstein was born in Germany.", True, HallucinationType.TRUE_FACT),
+    ("Albert Einstein was born in France.", False, HallucinationType.CONTRADICTION),
+    ("The Eiffel Tower is located in Paris.", True, HallucinationType.TRUE_FACT),
+    ("The Eiffel Tower is located in London.", False, HallucinationType.CONTRADICTION),
+    ("Tokyo is the capital of Japan.", True, HallucinationType.TRUE_FACT),
+    ("Tokyo is the capital of China.", False, HallucinationType.CONTRADICTION),
 ]
 
-# Set 3: Creator/Attribution claims
-TEST_SET_CREATORS = [
-    ("Python was created by Guido van Rossum.", True),
-    ("Python was created by Linus Torvalds.", False),
-    ("Linux was created by Linus Torvalds.", True),
-    ("Linux was created by Bill Gates.", False),
-    ("Facebook was founded by Mark Zuckerberg.", True),
-    ("Facebook was founded by Steve Jobs.", False),
+# =============================================================================
+# TEST SET 3: FABRICATIONS
+# Tests if algorithm can detect completely made up facts
+# e.g., "Einstein invented the internet"
+# =============================================================================
+TEST_FABRICATIONS = [
+    ("Python was created by Guido van Rossum.", True, HallucinationType.TRUE_FACT),
+    ("Einstein invented the internet.", False, HallucinationType.FABRICATION),
+    ("Marie Curie discovered radium.", True, HallucinationType.TRUE_FACT),
+    ("Marie Curie invented the smartphone.", False, HallucinationType.FABRICATION),
+    ("The Great Wall is located in China.", True, HallucinationType.TRUE_FACT),
+    ("The Great Wall was built by Napoleon.", False, HallucinationType.FABRICATION),
 ]
 
+# All test sets with their descriptions
 TEST_SETS = {
-    "inventions": ("Inventions & Discoveries", TEST_SET_INVENTIONS),
-    "geography": ("Geography & Locations", TEST_SET_GEOGRAPHY),
-    "creators": ("Creators & Founders", TEST_SET_CREATORS),
+    "false_attribution": ("False Attribution Detection", TEST_FALSE_ATTRIBUTION),
+    "contradictions": ("Contradiction Detection", TEST_CONTRADICTIONS),
+    "fabrications": ("Fabrication Detection", TEST_FABRICATIONS),
 }
+
+# Legacy format for backward compatibility (claim, is_true) tuples
+def get_test_tuples(test_set):
+    """Convert to simple (claim, is_true) format."""
+    return [(claim, is_true) for claim, is_true, _ in test_set]
 
 
 # =============================================================================
@@ -119,6 +149,16 @@ class ClaimResult:
     latency_ms: float
     verdict: str
     reason: str
+    hallucination_type: HallucinationType
+
+
+@dataclass
+class TypeDetectionRate:
+    """Detection rate for a specific hallucination type."""
+    hallucination_type: HallucinationType
+    tested: int
+    detected: int
+    rate: float
 
 
 @dataclass
@@ -131,6 +171,7 @@ class TestSetResult:
     avg_latency_ms: float
     total_time_ms: float
     results: List[ClaimResult]
+    detection_by_type: Dict[HallucinationType, TypeDetectionRate]
 
 
 @dataclass
@@ -184,9 +225,22 @@ class Algorithm:
         """
         raise NotImplementedError
     
-    def get_coverage_metrics(self, domain_scores: Dict[str, float], overall_accuracy: float) -> CoverageMetrics:
-        """Calculate coverage metrics based on test results."""
-        # Determine coverage level
+    def get_coverage_metrics(
+        self, 
+        domain_scores: Dict[str, float], 
+        overall_accuracy: float,
+        actual_detection_rates: Dict[HallucinationType, float] = None
+    ) -> CoverageMetrics:
+        """Calculate coverage metrics based on actual test results."""
+        actual_detection_rates = actual_detection_rates or {}
+        
+        # Use ACTUAL detection rates from tests, not declared capabilities
+        actual_false_attr = actual_detection_rates.get(HallucinationType.FALSE_ATTRIBUTION, 0) >= 0.5
+        actual_contradiction = actual_detection_rates.get(HallucinationType.CONTRADICTION, 0) >= 0.5
+        actual_fabrication = actual_detection_rates.get(HallucinationType.FABRICATION, 0) >= 0.5
+        actual_true_fact = actual_detection_rates.get(HallucinationType.TRUE_FACT, 0) >= 0.5
+        
+        # Determine coverage level based on overall accuracy
         if self.status == AlgorithmStatus.UNAVAILABLE:
             level = CoverageLevel.MINIMAL
         elif overall_accuracy >= 0.9:
@@ -200,26 +254,32 @@ class Algorithm:
         else:
             level = CoverageLevel.MINIMAL
         
-        # Calculate coverage score (0-100)
-        # Based on: accuracy (50%), detection capabilities (30%), domain coverage (20%)
-        capability_score = sum([
-            self.detects_false_attribution,
-            self.detects_contradictions,
-            self.detects_extrinsic,
-            self.detects_intrinsic
-        ]) / 4.0
+        # Calculate coverage score (0-100) based on ACTUAL test results
+        # Weights: accuracy (40%), actual detection rates (40%), domain coverage (20%)
+        
+        # Actual detection capability score from tests
+        actual_capability_score = 0
+        type_weights = {
+            HallucinationType.FALSE_ATTRIBUTION: 0.3,  # Important
+            HallucinationType.CONTRADICTION: 0.3,      # Important
+            HallucinationType.FABRICATION: 0.25,       # Important
+            HallucinationType.TRUE_FACT: 0.15,         # Should pass true facts
+        }
+        for h_type, weight in type_weights.items():
+            if h_type in actual_detection_rates:
+                actual_capability_score += actual_detection_rates[h_type] * weight
         
         domain_avg = sum(domain_scores.values()) / len(domain_scores) if domain_scores else 0
         
-        score = (overall_accuracy * 50) + (capability_score * 30) + (domain_avg * 20)
+        score = (overall_accuracy * 40) + (actual_capability_score * 100 * 0.4) + (domain_avg * 100 * 0.2)
         
         return CoverageMetrics(
             level=level,
             score=score,
-            detects_false_attribution=self.detects_false_attribution,
-            detects_contradictions=self.detects_contradictions,
-            detects_extrinsic=self.detects_extrinsic,
-            detects_intrinsic=self.detects_intrinsic,
+            detects_false_attribution=actual_false_attr,
+            detects_contradictions=actual_contradiction,
+            detects_extrinsic=actual_fabrication,  # fabrication tests extrinsic-like
+            detects_intrinsic=actual_true_fact,    # true_fact tests intrinsic verification
             domain_coverage=domain_scores,
             strengths=self.strengths,
             weaknesses=self.weaknesses
@@ -589,14 +649,19 @@ ALGORITHMS = {
 def run_benchmark(
     algorithm: Algorithm,
     test_set_name: str,
-    test_set: List[Tuple[str, bool]],
+    test_set: List[Tuple[str, bool, HallucinationType]],
     verbose: bool = False
 ) -> TestSetResult:
     """Run benchmark on a single test set."""
     results = []
     total_start = time.perf_counter()
     
-    for claim, expected in test_set:
+    # Track detection by type
+    type_stats = {}
+    for h_type in HallucinationType:
+        type_stats[h_type] = {"tested": 0, "detected": 0}
+    
+    for claim, expected, h_type in test_set:
         start = time.perf_counter()
         actual, verdict, reason = algorithm.verify(claim)
         latency = (time.perf_counter() - start) * 1000
@@ -607,6 +672,11 @@ def run_benchmark(
         else:
             passed = actual == expected
         
+        # Track detection by hallucination type
+        type_stats[h_type]["tested"] += 1
+        if passed:
+            type_stats[h_type]["detected"] += 1
+        
         results.append(ClaimResult(
             claim=claim,
             expected=expected,
@@ -614,19 +684,31 @@ def run_benchmark(
             passed=passed,
             latency_ms=latency,
             verdict=verdict,
-            reason=reason[:100] if reason else ""
+            reason=reason[:100] if reason else "",
+            hallucination_type=h_type
         ))
         
         if verbose:
             status = "✓" if passed else "✗"
             actual_str = "TRUE" if actual else ("FALSE" if actual is False else "N/A")
             expected_str = "TRUE" if expected else "FALSE"
-            print(f"  {status} {claim[:50]}...")
+            type_label = h_type.value
+            print(f"  {status} [{type_label:<12}] {claim[:40]}...")
             print(f"      Expected: {expected_str}, Got: {actual_str} ({verdict})")
-            print(f"      Latency: {latency:.1f}ms")
     
     total_time = (time.perf_counter() - total_start) * 1000
     passed_count = sum(1 for r in results if r.passed)
+    
+    # Calculate detection rates by type
+    detection_by_type = {}
+    for h_type, stats in type_stats.items():
+        if stats["tested"] > 0:
+            detection_by_type[h_type] = TypeDetectionRate(
+                hallucination_type=h_type,
+                tested=stats["tested"],
+                detected=stats["detected"],
+                rate=stats["detected"] / stats["tested"]
+            )
     
     return TestSetResult(
         name=test_set_name,
@@ -636,7 +718,8 @@ def run_benchmark(
         accuracy=passed_count / len(results) if results else 0,
         avg_latency_ms=sum(r.latency_ms for r in results) / len(results) if results else 0,
         total_time_ms=total_time,
-        results=results
+        results=results,
+        detection_by_type=detection_by_type
     )
 
 
@@ -654,21 +737,8 @@ def run_algorithm_benchmark(
     print(f"Description: {algorithm.description}")
     print(f"Status: {algorithm.status.value} - {algorithm.status_reason}")
     
-    # Print detection capabilities
-    print(f"\nDetection Capabilities:")
-    caps = []
-    if algorithm.detects_false_attribution:
-        caps.append("False Attribution")
-    if algorithm.detects_contradictions:
-        caps.append("Contradictions")
-    if algorithm.detects_extrinsic:
-        caps.append("Extrinsic (added info)")
-    if algorithm.detects_intrinsic:
-        caps.append("Intrinsic (modified facts)")
-    print(f"  {', '.join(caps) if caps else 'None'}")
-    
     if algorithm.status == AlgorithmStatus.UNAVAILABLE:
-        coverage = algorithm.get_coverage_metrics({}, 0.0)
+        coverage = algorithm.get_coverage_metrics({}, 0.0, {})
         return AlgorithmResult(
             name=algorithm.name,
             description=algorithm.description,
@@ -682,6 +752,8 @@ def run_algorithm_benchmark(
         )
     
     set_results = {}
+    all_type_stats = {}  # Aggregate detection by type across all test sets
+    
     for set_key, (set_name, test_data) in test_sets.items():
         print(f"\n  Test Set: {set_name}")
         print(f"  {'-' * 50}")
@@ -689,6 +761,13 @@ def run_algorithm_benchmark(
         set_results[set_key] = result
         print(f"  Results: {result.passed}/{result.claims_tested} ({result.accuracy:.0%})")
         print(f"  Avg Latency: {result.avg_latency_ms:.1f}ms")
+        
+        # Aggregate type stats
+        for h_type, rate in result.detection_by_type.items():
+            if h_type not in all_type_stats:
+                all_type_stats[h_type] = {"tested": 0, "detected": 0}
+            all_type_stats[h_type]["tested"] += rate.tested
+            all_type_stats[h_type]["detected"] += rate.detected
     
     # Calculate overall metrics
     total_passed = sum(r.passed for r in set_results.values())
@@ -696,14 +775,31 @@ def run_algorithm_benchmark(
     total_latency = sum(r.avg_latency_ms * r.claims_tested for r in set_results.values())
     overall_accuracy = total_passed / total_claims if total_claims else 0
     
+    # Calculate actual detection rates by type
+    actual_detection_rates = {}
+    for h_type, stats in all_type_stats.items():
+        if stats["tested"] > 0:
+            actual_detection_rates[h_type] = stats["detected"] / stats["tested"]
+    
     # Calculate domain coverage scores
     domain_scores = {k: r.accuracy for k, r in set_results.items()}
     
-    # Get coverage metrics
-    coverage = algorithm.get_coverage_metrics(domain_scores, overall_accuracy)
+    # Get coverage metrics with actual detection rates
+    coverage = algorithm.get_coverage_metrics(domain_scores, overall_accuracy, actual_detection_rates)
+    
+    # Print actual detection coverage
+    print(f"\n  Detection Coverage (from tests):")
+    print(f"  {'-' * 50}")
+    for h_type in [HallucinationType.TRUE_FACT, HallucinationType.FALSE_ATTRIBUTION, 
+                   HallucinationType.CONTRADICTION, HallucinationType.FABRICATION]:
+        if h_type in all_type_stats and all_type_stats[h_type]["tested"] > 0:
+            stats = all_type_stats[h_type]
+            rate = stats["detected"] / stats["tested"]
+            bar = "█" * int(rate * 10) + "░" * (10 - int(rate * 10))
+            print(f"  {h_type.value:<15} {bar} {rate:>5.0%} ({stats['detected']}/{stats['tested']})")
     
     # Print coverage summary
-    print(f"\n  Coverage: {coverage.level.value.upper()} (score: {coverage.score:.0f}/100)")
+    print(f"\n  Overall Coverage: {coverage.level.value.upper()} (score: {coverage.score:.0f}/100)")
     
     return AlgorithmResult(
         name=algorithm.name,

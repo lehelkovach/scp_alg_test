@@ -1,17 +1,17 @@
 ## Benchmark Results
 
-*Generated: 2026-01-14 17:10:34*
+*Generated: 2026-01-14 17:14:00*
 
 ### Algorithm Comparison
 
 | Algorithm | Status | Accuracy | Coverage | Score | Latency |
 |-----------|--------|----------|----------|-------|---------|
-| SCP | available | 78% | GOOD | 84/100 | 2.4ms |
-| Wikidata | available | 33% | WEAK | 46/100 | 0.0ms |
-| LLM-Judge | mock_only | 22% | MINIMAL | 46/100 | 0.0ms |
-| Self-Consistency | mock_only | 22% | MINIMAL | 46/100 | 0.0ms |
-| KnowShowGo | unavailable | N/A | MINIMAL | 30/100 | N/A |
-| VerifiedMemory | available | 67% | MODERATE | 77/100 | 0.3ms |
+| SCP | available | 83% | GOOD | 85/100 | 2.5ms |
+| Wikidata | available | 39% | WEAK | 38/100 | 0.0ms |
+| LLM-Judge | mock_only | 22% | MINIMAL | 23/100 | 0.0ms |
+| Self-Consistency | mock_only | 22% | MINIMAL | 23/100 | 0.0ms |
+| KnowShowGo | unavailable | N/A | MINIMAL | 0/100 | N/A |
+| VerifiedMemory | available | 72% | GOOD | 70/100 | 0.3ms |
 
 ### Coverage Legend
 
@@ -28,11 +28,11 @@
 | Algorithm | False Attribution | Contradictions | Extrinsic | Intrinsic |
 |-----------|-------------------|----------------|-----------|-----------|
 | SCP | ✓ | ✓ | ✓ | ✓ |
-| Wikidata | ✓ | ✓ | ✗ | ✓ |
-| LLM-Judge | ✓ | ✓ | ✓ | ✓ |
-| Self-Consistency | ✓ | ✓ | ✓ | ✓ |
-| KnowShowGo | ✓ | ✓ | ✓ | ✓ |
-| VerifiedMemory | ✓ | ✓ | ✓ | ✓ |
+| Wikidata | ✓ | ✗ | ✗ | ✗ |
+| LLM-Judge | ✗ | ✗ | ✗ | ✗ |
+| Self-Consistency | ✗ | ✗ | ✗ | ✗ |
+| KnowShowGo | ✗ | ✗ | ✗ | ✗ |
+| VerifiedMemory | ✗ | ✓ | ✓ | ✓ |
 
 ### Strengths & Weaknesses
 
@@ -123,38 +123,38 @@
 
 | Test Set | Passed | Total | Accuracy | Avg Latency |
 |----------|--------|-------|----------|-------------|
-| Inventions & Discoveries | 5 | 6 | 83% | 0.7ms |
-| Geography & Locations | 6 | 6 | 100% | 0.1ms |
-| Creators & Founders | 3 | 6 | 50% | 6.6ms |
+| False Attribution Detection | 5 | 6 | 83% | 0.7ms |
+| Contradiction Detection | 5 | 6 | 83% | 2.2ms |
+| Fabrication Detection | 5 | 6 | 83% | 4.5ms |
 
 #### Wikidata
 
 | Test Set | Passed | Total | Accuracy | Avg Latency |
 |----------|--------|-------|----------|-------------|
-| Inventions & Discoveries | 6 | 6 | 100% | 0.0ms |
-| Geography & Locations | 0 | 6 | 0% | 0.0ms |
-| Creators & Founders | 0 | 6 | 0% | 0.0ms |
+| False Attribution Detection | 6 | 6 | 100% | 0.0ms |
+| Contradiction Detection | 0 | 6 | 0% | 0.0ms |
+| Fabrication Detection | 1 | 6 | 17% | 0.0ms |
 
 #### LLM-Judge
 
 | Test Set | Passed | Total | Accuracy | Avg Latency |
 |----------|--------|-------|----------|-------------|
-| Inventions & Discoveries | 2 | 6 | 33% | 0.0ms |
-| Geography & Locations | 2 | 6 | 33% | 0.0ms |
-| Creators & Founders | 0 | 6 | 0% | 0.0ms |
+| False Attribution Detection | 2 | 6 | 33% | 0.0ms |
+| Contradiction Detection | 2 | 6 | 33% | 0.0ms |
+| Fabrication Detection | 0 | 6 | 0% | 0.0ms |
 
 #### Self-Consistency
 
 | Test Set | Passed | Total | Accuracy | Avg Latency |
 |----------|--------|-------|----------|-------------|
-| Inventions & Discoveries | 2 | 6 | 33% | 0.0ms |
-| Geography & Locations | 2 | 6 | 33% | 0.0ms |
-| Creators & Founders | 0 | 6 | 0% | 0.0ms |
+| False Attribution Detection | 2 | 6 | 33% | 0.0ms |
+| Contradiction Detection | 2 | 6 | 33% | 0.0ms |
+| Fabrication Detection | 0 | 6 | 0% | 0.0ms |
 
 #### VerifiedMemory
 
 | Test Set | Passed | Total | Accuracy | Avg Latency |
 |----------|--------|-------|----------|-------------|
-| Inventions & Discoveries | 3 | 6 | 50% | 0.2ms |
-| Geography & Locations | 5 | 6 | 83% | 0.2ms |
-| Creators & Founders | 4 | 6 | 67% | 0.5ms |
+| False Attribution Detection | 3 | 6 | 50% | 0.2ms |
+| Contradiction Detection | 5 | 6 | 83% | 0.2ms |
+| Fabrication Detection | 5 | 6 | 83% | 0.4ms |
