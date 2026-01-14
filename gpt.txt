@@ -106,3 +106,32 @@ Outcome:
   - Provenance storage with doc_id + offsets/spans.
   - Cache keyed by normalized claim + corpus/version + verifier version.
 
+
+Decision 5: "Add multiple hallucination detection solutions as runnable tests"
+----------------------------------------------------------------------------
+Plan:
+- Make `python -m unittest` work in a clean environment.
+  - Add minimal dependencies required by existing modules.
+- Implement multiple distinct strategies as separate Python modules, each heavily commented:
+  - Rule-based claim extraction (cheap).
+  - KB-based verification (exact + contradiction).
+  - Evidence-bounded verification (supports provenance).
+  - Self-consistency (stability check; risk signal).
+  - Cross-model agreement (risk signal).
+  - Layer-2 memory (cache + provenance store).
+- Add `test_*.py` files for each strategy so a test runner exercises them.
+
+Reasoning:
+- The user asked for "different solutions" and for them to be "run as tests by a test runner".
+- Splitting each strategy into its own module keeps approaches composable and makes tradeoffs explicit.
+- `unittest` discovery is available by default and avoids forcing a particular third-party test framework.
+- Installing `networkx` via `requirements.txt` is the simplest way to prevent the existing `test.py`
+  module from breaking test discovery (it imports `networkx` at import time).
+
+Outcome:
+- Added `requirements.txt` including `networkx`.
+- Added modules: `hd_types.py`, `hd_normalize.py`, `hd_claim_extract_rules.py`, `hd_verify_kb.py`,
+  `hd_verify_evidence.py`, `hd_self_consistency.py`, `hd_cross_model.py`, `hd_memory.py`.
+- Added unit tests: `test_hd_claim_extraction.py`, `test_hd_verify_kb.py`, `test_hd_verify_evidence.py`,
+  `test_hd_consistency.py`, `test_hd_memory.py`.
+
