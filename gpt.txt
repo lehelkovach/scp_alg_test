@@ -1,0 +1,108 @@
+GPT Decision Log (plans + reasoning)
+===================================
+
+Date: 2026-01-14
+Repo: lehelkovach/scp_alg_test
+
+Purpose
+-------
+This file captures my plan at each decision point and the reasoning used to choose an approach.
+
+
+Decision 1: "Are extra branches the same code?"
+-----------------------------------------------
+Plan:
+- List local branches and their commit SHAs.
+- Fetch remotes and list remote branches.
+- Compare commit pointers and merge-bases to see if branches are identical or diverged.
+
+Reasoning:
+- Branches are "the same code" if they point to the same commit (same SHA).
+- If SHAs differ but share a merge-base, then they diverged and contain different code.
+
+Outcome:
+- Local branches `main` and `cursor/redundant-branches-check-52e6` pointed to the same commit.
+- Several remote-only `origin/cursor/hallucination-detection-algorithm-*` branches diverged from `main` and were not identical.
+
+
+Decision 2: "Are these branches from different Cursor model runs?"
+------------------------------------------------------------------
+Plan:
+- Use branch naming patterns and commit messages to infer provenance.
+- Confirm whether branches are separate diverging lines from `main`.
+
+Reasoning:
+- Branch prefixes like `cursor/...` and repeated "algorithm-<hash>" suffixes are consistent with separate automated agent runs.
+- Different SHAs on top of the same merge-base indicates independent iterations.
+
+Outcome:
+- Concluded they are almost certainly separate Cursor automation runs (not strictly provable as different models).
+
+
+Decision 3: "Which branch is best to continue with and merge to main?"
+----------------------------------------------------------------------
+Plan:
+- For each candidate branch, review:
+  - Diffstat (size and scope of changes)
+  - Project structure (where core logic lives)
+  - Test strategy and ease of running tests
+  - Dependency footprint and runtime latency
+  - Repo hygiene (e.g., committed build artifacts like `__pycache__`)
+- Prefer the branch that is easiest to run, easiest to audit, and least likely to break CI.
+
+Reasoning:
+- Merge readiness is not just "more features"; it includes:
+  - Clean structure (library vs script separation)
+  - Clear tests that directly import the implementation
+  - Minimal dependencies / minimal downloads (lower latency and friction)
+  - Clean git history (no binary artifacts committed)
+
+Observed signals:
+- `origin/cursor/hallucination-detection-algorithm-571d`:
+  - Clean file hygiene (no `__pycache__` binaries committed).
+  - Adds `scp_lib.py`, `demo.py`, and unit tests.
+  - Tests include notes indicating extractor gaps (e.g. "was created by" not covered).
+  - No `requirements.txt` in that branch, so setup is less obvious.
+- `origin/cursor/hallucination-detection-algorithm-e532`:
+  - Better "merge-ready" module boundary: core in `scp.py`, tests in `test_scp.py`.
+  - Uses a hashing embedding backend by default (no model downloads, no API keys).
+  - Unfortunately includes committed `__pycache__` binaries (fixable, but a red flag).
+- `origin/cursor/hallucination-detection-algorithm-11a4`:
+  - Most comprehensive pytest suite.
+  - But core code remains in `test.py` with tests importing from `test`, which is awkward.
+  - Also includes committed `__pycache__` binaries (fixable, but a red flag).
+
+Outcome:
+- Recommended continuing from `...-e532` for merge, with a required cleanup step:
+  - Remove `__pycache__/*.pyc` from git and add ignore rules.
+
+
+Decision 4: "Lowest-resource hallucination testing + provenance + memory"
+------------------------------------------------------------------------
+Plan:
+- Define hallucination relative to evidence (not absolute truth):
+  - claim is hallucination if NOT_SUPPORTED by evidence or CONTRADICTED by evidence.
+- Build a staged pipeline:
+  1) Extract a small set of atomic claims (rule-based first; LLM fallback only if needed).
+  2) Retrieve minimal evidence for top-k risky claims (k small).
+  3) Verify each claim with evidence-bounded checks (rules/NLI/LLM-judge).
+  4) Output an auditable report with citations.
+  5) Store results in:
+     - a fast verification cache (reuse),
+     - a provenance memory graph (RAG layer-2).
+
+Reasoning:
+- "0 hallucinations" in open-world QA is not generally achievable; what is achievable is:
+  - "no unsupported claims relative to an evidence set" via abstention + citations.
+- Building a KG primarily from LLM outputs risks amplifying errors.
+- The biggest reliability jump per unit cost is usually:
+  - constrain answers to retrieved evidence,
+  - enforce per-claim citations,
+  - abstain when evidence is insufficient.
+
+Outcome:
+- Proposed architecture:
+  - Evidence-bounded verification (ENTAILED / CONTRADICTED / NOT_SUPPORTED / UNCLEAR).
+  - Provenance storage with doc_id + offsets/spans.
+  - Cache keyed by normalized claim + corpus/version + verifier version.
+
