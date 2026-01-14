@@ -1,0 +1,290 @@
+================================================================================
+EXTERNAL DEPENDENCIES & IMPLEMENTATION NOTES
+================================================================================
+
+Author: Lehel Kovach
+AI Assistant: Claude Opus 4.5 (Anthropic)
+Repository: github.com/lehelkovach/scp_alg_test
+Date: January 14, 2026
+
+This file documents all external projects, APIs, and components required by
+tests and solutions in this repository that need to be built or configured.
+
+================================================================================
+1. KNOWSHOWGO (github.com/lehelkovach/knowshowgo)
+================================================================================
+
+STATUS: Not yet integrated (mock client in lib/ksg_integration.py)
+
+WHAT'S NEEDED:
+- REST API server running on configurable port (default: 3000)
+- Prototype CRUD endpoints (/prototypes)
+- Concept CRUD endpoints (/concepts)
+- Semantic search endpoint (/concepts/search)
+- Association management (/associations)
+- Version history (/concepts/:uuid/history)
+
+FILES THAT DEPEND ON IT:
+- lib/ksg_integration.py (KSGClient, KSGVerifiedMemory)
+- lib/ksg_ground_truth.py (KSGGroundTruth)
+- docs/ksg_architecture.py (demo)
+
+CURRENT WORKAROUND:
+- In-memory mock implementation in ksg_ground_truth.py
+- Hash-based embeddings (no real semantic similarity)
+
+TO ENABLE FULL INTEGRATION:
+1. Deploy KnowShowGo server
+2. Set KSG_URL environment variable
+3. Run: python -c "from lib.ksg_integration import KSGClient; KSGClient().ensure_prototypes()"
+
+SEE: docs/knowshowgo_integration_spec.md for full API requirements
+
+================================================================================
+2. SENTENCE-TRANSFORMERS (Optional ML Enhancement)
+================================================================================
+
+STATUS: Optional dependency, graceful fallback exists
+
+WHAT IT PROVIDES:
+- Real semantic embeddings (384-dim vectors)
+- Much better similarity matching than hash-based fallback
+- Model: all-MiniLM-L6-v2 (22MB, fast)
+
+FILES THAT USE IT:
+- lib/scp.py (SentenceTransformerBackend)
+- solutions/scp/scp_prover.py (SCPKBProver with use_embeddings=True)
+
+INSTALL:
+    pip install sentence-transformers
+
+FALLBACK BEHAVIOR:
+- If not installed, uses HashingEmbeddingBackend
+- Hash-based embeddings work but have lower accuracy
+- EMBEDDINGS_AVAILABLE flag controls behavior
+
+TEST IF WORKING:
+    python -c "from lib.scp import EMBEDDINGS_AVAILABLE; print(f'Embeddings: {EMBEDDINGS_AVAILABLE}')"
+
+================================================================================
+3. WIKIDATA SPARQL API (External Service)
+================================================================================
+
+STATUS: Working (free public API)
+
+ENDPOINT: https://query.wikidata.org/sparql
+
+WHAT IT PROVIDES:
+- 100M+ structured facts
+- No API key required
+- SPARQL query interface
+
+FILES THAT USE IT:
+- lib/wikidata_verifier.py (WikidataVerifier)
+- solutions/wikidata/wikidata_prover.py
+
+RATE LIMITS:
+- No strict limits for reasonable usage
+- Recommend: max 1 request/second for batch operations
+- Caching enabled by default (wikidata_cache.json)
+
+SUPPORTED PREDICATES:
+- invented (P61)
+- discovered (P61)
+- founded (P112)
+- created (P170)
+- born_in (P19)
+- died_in (P20)
+- capital_of (P36)
+- located_in (P131, P17)
+
+TO ADD NEW PREDICATES:
+1. Find Wikidata property ID at https://www.wikidata.org/wiki/Property:P
+2. Add to PREDICATE_MAPPING in lib/wikidata_verifier.py
+3. Update SPARQL query template if needed
+
+OFFLINE MODE:
+- Set WIKIDATA_OFFLINE=1 to use cache only
+- Pre-populate cache with common facts for offline testing
+
+================================================================================
+4. LLM API (For LLM-as-Judge Strategy)
+================================================================================
+
+STATUS: Mock implementation only
+
+WHAT'S NEEDED:
+- OpenAI API key OR Anthropic API key OR local LLM endpoint
+
+FILES THAT USE IT:
+- lib/hallucination_strategies.py (LLMJudgeStrategy, mock_llm)
+- solutions/llm/llm_judge.py
+
+CURRENT WORKAROUND:
+- mock_llm() function returns hardcoded responses
+- Good for testing, not for production
+
+TO ENABLE REAL LLM:
+1. Install API client:
+   pip install openai  # or anthropic
+
+2. Set environment variable:
+   export OPENAI_API_KEY=sk-...
+   # or
+   export ANTHROPIC_API_KEY=sk-ant-...
+
+3. Replace mock_llm with real client in your code:
+   
+   from openai import OpenAI
+   client = OpenAI()
+   
+   def real_llm(prompt):
+       response = client.chat.completions.create(
+           model="gpt-4o-mini",
+           messages=[{"role": "user", "content": prompt}]
+       )
+       return response.choices[0].message.content
+   
+   judge = LLMJudgeStrategy(real_llm)
+
+COST CONSIDERATIONS:
+- gpt-4o-mini: ~$0.15/1M tokens (cheapest)
+- claude-3-haiku: ~$0.25/1M tokens
+- Self-consistency (3-5 calls) multiplies cost
+
+================================================================================
+5. FASTAPI (For API Service Mode)
+================================================================================
+
+STATUS: Optional, for REST API deployment
+
+WHAT IT PROVIDES:
+- REST API wrapper around SCP prover
+- Continuous KB building via /ingest
+- Real-time verification via /verify
+
+FILES THAT USE IT:
+- solutions/scp/scp_prover.py (create_api_app, app)
+
+INSTALL:
+    pip install fastapi uvicorn
+
+RUN SERVER:
+    uvicorn solutions.scp.scp_prover:app --port 8000
+
+TEST:
+    curl http://localhost:8000/stats
+    curl -X POST http://localhost:8000/verify \
+      -H "Content-Type: application/json" \
+      -d '{"answer_text": "Edison invented the telephone."}'
+
+================================================================================
+6. PYTEST (For Running Tests)
+================================================================================
+
+STATUS: Required for test suite
+
+INSTALL:
+    pip install pytest
+
+RUN TESTS:
+    pytest tests/test_scp.py -v
+
+TEST COUNT: 53 tests covering:
+- Claim dataclass (4 tests)
+- RuleBasedExtractor (8 tests)
+- HyperKB (9 tests)
+- Embedding backends (6 tests)
+- SCPProber (11 tests)
+- Verdict scenarios (4 tests)
+- Edge cases (5 tests)
+- False attribution (4 tests)
+- Coreference handling (2 tests)
+
+================================================================================
+7. FUTURE: VECTOR DATABASE (For Scale)
+================================================================================
+
+STATUS: Not implemented (consider for >1M facts)
+
+OPTIONS:
+- Pinecone (managed, easiest)
+- Weaviate (open source, good for hybrid search)
+- Milvus (open source, high performance)
+- Qdrant (open source, Rust-based)
+
+WHEN TO ADD:
+- KB exceeds 100K facts
+- Search latency > 100ms
+- Need distributed deployment
+
+MIGRATION PATH:
+1. Create VectorDBBackend implementing EmbeddingBackend interface
+2. Replace HyperKB's internal dict with vector DB client
+3. Add batch indexing for initial load
+
+================================================================================
+8. ENVIRONMENT VARIABLES SUMMARY
+================================================================================
+
+Required:
+  (none - all dependencies have fallbacks)
+
+Optional:
+  KSG_URL              KnowShowGo server URL (default: http://localhost:3000)
+  OPENAI_API_KEY       For LLM-as-judge with OpenAI
+  ANTHROPIC_API_KEY    For LLM-as-judge with Anthropic
+  WIKIDATA_OFFLINE     Set to 1 for cache-only mode
+
+Development:
+  PYTEST_CURRENT_TEST  Set by pytest automatically
+  
+================================================================================
+9. QUICK START CHECKLIST
+================================================================================
+
+Minimal (tests pass):
+  [x] Python 3.10+
+  [x] pip install networkx numpy
+  [x] pip install pytest
+
+Recommended (better accuracy):
+  [ ] pip install sentence-transformers
+
+Full features:
+  [ ] pip install fastapi uvicorn
+  [ ] pip install openai  # or anthropic
+  [ ] KnowShowGo server running
+
+Production:
+  [ ] KnowShowGo deployed
+  [ ] Vector database for scale
+  [ ] LLM API configured
+  [ ] Monitoring/logging
+
+================================================================================
+10. IMPLEMENTATION PRIORITY FOR OUTSIDE PROJECTS
+================================================================================
+
+HIGH PRIORITY (blocks core functionality):
+1. KnowShowGo REST API - See docs/knowshowgo_integration_spec.md
+   - Without this, only in-memory mock works
+   - Estimated effort: 2-4 weeks
+
+MEDIUM PRIORITY (improves accuracy):
+2. Sentence-transformers integration
+   - Already working, just needs pip install
+   - Effort: 5 minutes
+
+LOW PRIORITY (nice to have):
+3. Vector database integration
+   - Only needed at scale
+   - Effort: 1-2 weeks
+
+4. Production LLM integration
+   - Mock works for testing
+   - Effort: 1 day
+
+================================================================================
+END OF DOCUMENT
+================================================================================
