@@ -1,0 +1,46 @@
+Gemini Planning and Reasoning Log
+===============================
+
+Date: 2026-01-14
+Task: Refactoring and Architecture Decisions for SCP / KnowShowGo Integration
+
+1. Analysis of Existing Branches
+--------------------------------
+- **Observation**: Three branches existed (`11a4`, `571d`, `e532`).
+- **Analysis**:
+    - `11a4`: Monolithic script, basic implementation.
+    - `571d`: Modularized into library/demo, better testing.
+    - `e532`: Most advanced. Included `HashingEmbeddingBackend` for zero-dependency/zero-latency local operation, Pluggable Extractors, and a full test suite.
+- **Decision**: Merged `e532` into `main` as the foundational codebase. It provided the best balance of features (zero-resource mode) and code quality (modular architecture).
+
+2. Zero-Resource Hallucination Detection
+----------------------------------------
+- **Goal**: Detect hallucinations without external API calls or model training.
+- **Strategy**: "Context-Faithfulness" verification.
+- **Implementation**:
+    - Created `detect_hallucination.py` to demo the capability.
+    - **Problem Identified**: The initial `RuleBasedExtractor` was too rigid for natural language business text (failed to catch "stock price rose").
+    - **Refinement**: Enhanced `scp.py` with expanded regex patterns for business verbs (`announced`, `increased_by`, etc.).
+    - **Result**: Successfully detected contradictions (Intrinsic Hallucinations) with 0ms network latency and $0 cost.
+
+3. Architecture Pivot: Testing vs. Graph Memory
+-----------------------------------------------
+- **User Query**: Is it better to *test* a probabilistic LLM or *build* a deterministic Graph LLM?
+- **Reasoning**: "Testing" output is reactive and probabilistic. Building a "Semantic Memory Graph" (GraphRAG) is proactive and deterministic.
+- **Conclusion**: Moving towards a GraphRAG architecture is superior for "Zero Hallucination" requirements. The LLM becomes the reasoning engine (CPU), and the Graph becomes the memory (RAM).
+
+4. Microservice Architecture (SCP vs. KnowShowGo)
+-------------------------------------------------
+- **Task**: Integrate `scp.py` with `knowshowgo` (Node.js/ArangoDB).
+- **Constraint**: `scp.py` relies heavily on Python-native NLP libraries (`networkx`, `sentence-transformers`, `numpy`). `knowshowgo` is a pure Node.js application.
+- **Decision**: **Sidecar Microservice Pattern**.
+    - **Why**: Rewriting the complex Python NLP/Graph logic into Node.js is inefficient and loses access to the Python ecosystem.
+    - **Action**: Refactored `scp.py` into `graph_service.py` (FastAPI).
+    - **Role**: `graph_service.py` acts as the "Semantic Verification Engine" running alongside `knowshowgo`.
+    - **Benefits**: Decoupling, scalability, and leveraging the best language for the job (Python for NLP, Node.js for App Logic).
+
+5. Current State
+----------------
+- **`scp.py`**: Core Python library for Hypergraph logic and Claim Extraction.
+- **`graph_service.py`**: FastAPI service wrapping `scp.py` to provide `POST /ingest`, `POST /verify`, and `GET /query` endpoints.
+- **`knowshowgo`**: Remains the main Knowledge Graph application (Node.js), which can now call `graph_service.py` for audit/verification tasks.

@@ -1,11 +1,20 @@
-# Core dependencies for SCP Hallucination Detection
+# Hallucination Detection System - Dependencies
+# Author: Lehel Kovach
+# AI Assistant: Claude Opus 4.5
+
+# Core dependencies
 networkx>=3.0
 numpy>=1.24
-sentence-transformers>=2.2.0
+
+# Optional: Better embeddings (recommended)
+# sentence-transformers>=2.2.0
 
 # Testing
 pytest>=7.0
 
-# Optional: LLM-based claim extraction
-# anthropic>=0.7.0
-# openai>=1.0.0
+# API server (optional)
+# fastapi>=0.100.0
+# uvicorn>=0.22.0
+
+# Note: Wikidata integration uses standard library only (urllib, json)
+# Note: LLM integrations bring your own client (openai, anthropic, etc.)
