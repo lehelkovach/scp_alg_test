@@ -18,7 +18,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from lib.scp import (
+from scp import (
     Claim, Verdict, ProbeResult, SCPReport,
     HyperKB, SCPProber,
     RuleBasedExtractor, LLMExtractor, HybridExtractor,

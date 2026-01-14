@@ -12,159 +12,185 @@ A comprehensive toolkit for detecting hallucinations in Large Language Model (LL
 # Install dependencies
 pip install -r requirements.txt
 
-# Run all tests
-python run_tests.py --verbose
+# Run benchmark suite
+python benchmark.py
 
-# Run specific solution
-python run_tests.py --solution wikidata
+# Run with verbose output (shows each test)
+python benchmark.py --verbose
 
-# Run demos
-python solutions/scp/scp_prover.py
-python solutions/wikidata/wikidata_prover.py
+# Export results to markdown
+python benchmark.py --export
+
+# Run unit tests (53 tests)
+pytest tests/test_scp.py -v
 ```
 
-## Solutions Overview
+## Benchmark Results
 
-| Solution | Speed | API Calls | Accuracy | Best For |
-|----------|-------|-----------|----------|----------|
-| **SCP** | ~10ms | 0 | Limited by KB | High-volume, known domains |
-| **Wikidata** | ~200ms | 0* | High | General facts, no setup |
-| **LLM Judge** | ~200ms | 1 | Medium | Quick checks |
+*Generated: 2026-01-14*
 
-*Wikidata is a free public API
+### Algorithm Comparison
 
-### SCP Modes
+| Algorithm | Status | Accuracy | Coverage | Score | Latency |
+|-----------|--------|----------|----------|-------|---------|
+| **SCP** | ✅ available | **83%** | GOOD | 85/100 | 2.9ms |
+| **VerifiedMemory** | ✅ available | 72% | GOOD | 70/100 | 0.3ms |
+| **Wikidata** | ✅ available | 39% | WEAK | 38/100 | ~200ms |
+| **LLM-Judge** | ⚠️ mock | 22% | MINIMAL | 23/100 | ~200ms |
+| **Self-Consistency** | ⚠️ mock | 22% | MINIMAL | 23/100 | ~500ms |
+| **KnowShowGo** | ❌ unavailable | N/A | N/A | 0/100 | N/A |
 
-The SCP solution includes three modes in one unified module:
+### Detection Coverage (from actual tests)
 
-| Mode | Use Case |
-|------|----------|
-| KB Mode | Verify against pre-built knowledge base |
-| Context Mode | RAG faithfulness checking |
-| API Mode | REST service for continuous verification |
+Each algorithm is tested against specific hallucination types:
+
+**SCP (Best Overall):**
+```
+true_fact       ███████░░░   78% (7/9)   - Correctly verifies true claims
+false_attr      ██████░░░░   67% (2/3)   - Detects wrong attribution
+contradiction   ██████████  100% (3/3)   - Detects contradictions
+fabrication     ██████████  100% (3/3)   - Detects made-up facts
+```
+
+**VerifiedMemory:**
+```
+true_fact       █████████░   89% (8/9)
+false_attr      ░░░░░░░░░░    0% (0/3)
+contradiction   ██████████  100% (3/3)
+fabrication     ██████████  100% (3/3)
+```
+
+**Wikidata:**
+```
+true_fact       ████░░░░░░   44% (4/9)
+false_attr      ██████████  100% (3/3)   - Strong for inventions
+contradiction   ░░░░░░░░░░    0% (0/3)   - Limited predicate support
+fabrication     ░░░░░░░░░░    0% (0/3)
+```
+
+### Hallucination Types Tested
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **True Fact** | Verify correct claims pass | "Bell invented telephone" ✓ |
+| **False Attribution** | Wrong subject | "Edison invented telephone" ✗ |
+| **Contradiction** | Conflicts with known fact | "Einstein born in France" ✗ |
+| **Fabrication** | Completely made up | "Curie invented smartphone" ✗ |
+
+### Test Set Breakdown
+
+| Test Set | SCP | VerifiedMemory | Wikidata |
+|----------|-----|----------------|----------|
+| False Attribution | 83% | 50% | 100% |
+| Contradiction | 83% | 83% | 0% |
+| Fabrication | 83% | 83% | 17% |
 
 ## Repository Structure
 
 ```
 scp_alg_test/
-├── README.md                    # This file
-├── requirements.txt             # Dependencies
-├── run_tests.py                 # Main test runner [Opus4.5]
+├── scp.py                   # Core SCP prover (GOOD coverage)
+├── wikidata_verifier.py     # Wikidata API (WEAK coverage)
+├── hallucination_strategies.py  # LLM strategies
+├── verified_memory.py       # Caching layer (GOOD coverage)
+├── ksg_ground_truth.py      # KnowShowGo (unavailable)
 │
-├── lib/                         # Core library implementations
-│   ├── __init__.py
-│   ├── scp.py                  # SCP hallucination prover
-│   ├── wikidata_verifier.py    # Wikidata API integration
-│   ├── verified_memory.py      # Verification + caching
-│   ├── hallucination_strategies.py  # Strategy comparison
-│   ├── ksg_ground_truth.py     # KnowShowGo architecture
-│   └── ksg_integration.py      # KnowShowGo REST client
+├── benchmark.py             # Benchmark suite with coverage tests
+├── tests/
+│   └── test_scp.py         # 53 unit tests
 │
-├── solutions/                   # Organized solution implementations
-│   ├── scp/                    # Knowledge Base verification
-│   │   └── scp_prover.py      # KB, Context, and API modes
-│   ├── wikidata/               # External knowledge graph
-│   │   └── wikidata_prover.py
-│   └── llm/                    # LLM-based approaches
-│       └── llm_judge.py
+├── docs/
+│   └── ...
 │
-├── tests/                       # Test files
-│   ├── test_scp.py             # Unit tests
-│   └── demo_scp.py             # Demo script
-│
-└── docs/                        # Documentation
-    ├── opus.txt                # Design decisions [Opus4.5]
-    ├── gemini.txt              # Previous session notes
-    ├── neuro_symbolic_architecture.py  # Architecture analysis
-    └── ksg_architecture.py     # KnowShowGo reference
+└── README.md
 ```
 
-## Algorithm Explanations
+## Coverage Levels
 
-### 1. SCP (Symbolic Consistency Probing)
+| Level | Score | Meaning |
+|-------|-------|---------|
+| **EXCELLENT** | 90+ | Detects all hallucination types reliably |
+| **GOOD** | 70-89 | Reliable for most claim types |
+| **MODERATE** | 50-69 | Partial detection, some blind spots |
+| **WEAK** | 30-49 | Limited reliability |
+| **MINIMAL** | <30 | Not recommended for production |
 
-Unified hallucination detection with three modes:
+## Algorithms
 
-**KB Mode:** Verify against pre-built knowledge base
-- Build KB from facts: `prover.add_facts([("Bell", "invented", "telephone")])`
-- Verify claims: `prover.verify("Edison invented telephone")` → refuted
+### 1. SCP (Symbolic Consistency Probing) - GOOD Coverage
 
-**Context Mode:** RAG faithfulness checking (zero external dependencies)
-- Check LLM output against source document
-- Detects: Extrinsic (added info), Intrinsic (contradictions)
-
-**API Mode:** REST service
-- `POST /ingest` - Add facts to KB
-- `POST /verify` - Verify answer
-- `GET /stats` - KB statistics
-
-Speed: ~10ms | API Calls: 0
-
-### 2. Wikidata Verification
-
-Queries Wikidata's 100M+ facts via SPARQL.
-- **Speed:** ~200ms | **API Calls:** 0 (free public API)
-- **No setup required** - instant access to structured knowledge
-
-### 3. LLM-as-Judge
-
-Uses an LLM to verify claims.
-- **Speed:** ~200ms | **API Calls:** 1
-- **Strategies:** Single judge, self-consistency, cross-model
-
-## Usage Examples
-
-### Basic KB Verification
 ```python
-from solutions.scp import SCPKBProver
+from scp import HyperKB, SCPProber, RuleBasedExtractor, HashingEmbeddingBackend
 
-prover = SCPKBProver()
-prover.add_facts([("Bell", "invented", "telephone")])
+kb = HyperKB(embedding_backend=HashingEmbeddingBackend(dim=512))
+kb.add_facts_bulk([("Bell", "invented", "telephone")])
 
-result = prover.verify("Edison invented the telephone")
-print(result["status"])  # "refuted"
+prober = SCPProber(kb=kb, extractor=RuleBasedExtractor())
+report = prober.probe("Edison invented the telephone")
+print(report.results[0].verdict)  # FAIL or CONTRADICT
 ```
 
-### RAG Faithfulness
+**Test Results:**
+- ✅ 100% contradiction detection
+- ✅ 100% fabrication detection  
+- ⚠️ 67% false attribution (semantic similarity limitation)
+
+### 2. Wikidata - WEAK Coverage
+
 ```python
-from solutions.scp import check_faithfulness
-
-context = "Revenue increased 15%. CEO Jane Doe announced partnership."
-answer = "Revenue went up 15% and stock rose 10%."  # Hallucination!
-
-report, hallucinations = check_faithfulness(context, answer)
-# hallucinations = [Claim about stock - not in context]
-```
-
-### Wikidata Verification
-```python
-from solutions.wikidata import WikidataVerifier
+from wikidata_verifier import WikidataVerifier
 
 verifier = WikidataVerifier()
-result = verifier.verify("Edison invented the telephone")
-print(result.status)  # REFUTED
+result = verifier.verify("Bell invented the telephone")
 ```
 
-### API Service
+**Test Results:**
+- ✅ 100% false attribution (for supported predicates)
+- ❌ 0% contradiction detection (limited predicates)
+- ❌ 0% fabrication detection
+
+### 3. Verified Memory - GOOD Coverage
+
+```python
+from verified_memory import HallucinationProver
+
+prover = HallucinationProver()
+status, provenance, claim = prover.prove("Bell invented the telephone")
+```
+
+**Test Results:**
+- ✅ 100% contradiction detection
+- ✅ 100% fabrication detection
+- ⚠️ 0% false attribution (needs KB expansion)
+
+## Running Benchmarks
+
 ```bash
-uvicorn solutions.scp.scp_prover:app --port 8000
+# Full benchmark with all algorithms
+python benchmark.py
 
-# Ingest facts
-curl -X POST http://localhost:8000/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Bell invented the telephone."}'
+# Verbose output (shows each claim result)
+python benchmark.py --verbose
 
-# Verify claims
-curl -X POST http://localhost:8000/verify \
-  -H "Content-Type: application/json" \
-  -d '{"answer_text": "Edison invented the telephone."}'
+# Single algorithm
+python benchmark.py --algorithm scp
+
+# Export to markdown
+python benchmark.py --export
 ```
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | Enable real LLM-as-Judge |
+| `ANTHROPIC_API_KEY` | Alternative LLM API |
+| `KSG_URL` | KnowShowGo server URL |
 
 ## Authorship
 
 - **Author:** Lehel Kovach
 - **AI Assistant:** Claude Opus 4.5 (Anthropic)
-- All Opus 4.5 commits tagged with `[Opus4.5]` prefix
 
 ## License
 
