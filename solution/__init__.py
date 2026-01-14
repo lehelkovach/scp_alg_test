@@ -12,8 +12,7 @@ Modules:
     wikidata_verifier.py        - Wikidata API integration for external KB
     hallucination_strategies.py - LLM-based strategies (Judge, Self-Consistency)
     verified_memory.py          - Cached verification with provenance
-    ksg_ground_truth.py         - KnowShowGo ground truth layer (requires server)
-    ksg_integration.py          - KnowShowGo integration examples
+    ksg.py                      - KnowShowGo integration (ground truth + memory)
     benchmark.py                - Main benchmark suite with coverage metrics
     test_scp.py                 - Unit tests (53 tests)
 

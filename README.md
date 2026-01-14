@@ -56,8 +56,7 @@ scp_alg_test/
 │   ├── wikidata_verifier.py         # Wikidata API integration - WEAK (38/100)
 │   ├── hallucination_strategies.py  # LLM-based strategies (Judge, Consistency)
 │   ├── verified_memory.py           # Caching layer - GOOD coverage (70/100)
-│   ├── ksg_ground_truth.py          # KnowShowGo ground truth (requires server)
-│   ├── ksg_integration.py           # KnowShowGo integration examples
+│   ├── ksg.py                       # KnowShowGo integration (ground truth + memory)
 │   ├── benchmark.py                 # MAIN BENCHMARK SUITE
 │   └── test_scp.py                  # Unit tests (53 tests)
 │
@@ -83,7 +82,7 @@ scp_alg_test/
 | `solution/wikidata_verifier.py` | Query Wikidata SPARQL for verification | ⚠️ WEAK |
 | `solution/hallucination_strategies.py` | LLM-as-Judge, Self-Consistency | 🔶 Mock |
 | `solution/verified_memory.py` | Cache verified facts with provenance | ✅ GOOD |
-| `solution/ksg_*.py` | KnowShowGo integration (future) | ❌ Unavailable |
+| `solution/ksg.py` | KnowShowGo integration (ground truth + memory) | ❌ Unavailable |
 | `solution/benchmark.py` | Run all algorithms, show coverage + fixes | ✅ Ready |
 | `solution/test_scp.py` | 53 unit tests for core algorithm | ✅ Passing |
 
