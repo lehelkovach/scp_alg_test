@@ -1,6 +1,24 @@
-__pycache__/
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+
+# Project-specific
 demo_memory/
 verified_memory/
 wikidata_cache.json
+benchmark_memory/
+BENCHMARK_RESULTS.md
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
