@@ -87,6 +87,29 @@ class AlgorithmStatus(Enum):
     MOCK_ONLY = "mock_only"
 
 
+class CoverageLevel(Enum):
+    """How comprehensive the hallucination detection is."""
+    EXCELLENT = "excellent"   # 90%+ accuracy, detects all hallucination types
+    GOOD = "good"             # 70-89% accuracy, detects most types
+    MODERATE = "moderate"     # 50-69% accuracy, limited detection
+    WEAK = "weak"             # 30-49% accuracy, unreliable
+    MINIMAL = "minimal"       # <30% or unavailable
+
+
+@dataclass
+class CoverageMetrics:
+    """Coverage metrics for an algorithm."""
+    level: CoverageLevel
+    score: float                    # 0-100 coverage score
+    detects_false_attribution: bool # Can detect "Edison invented telephone"
+    detects_contradictions: bool    # Can detect contradicting claims
+    detects_extrinsic: bool         # Can detect info not in KB
+    detects_intrinsic: bool         # Can detect modified facts
+    domain_coverage: Dict[str, float]  # Coverage per domain
+    strengths: List[str]
+    weaknesses: List[str]
+
+
 @dataclass
 class ClaimResult:
     claim: str
@@ -119,6 +142,7 @@ class AlgorithmResult:
     test_sets: Dict[str, TestSetResult]
     overall_accuracy: float
     overall_latency_ms: float
+    coverage: Optional[CoverageMetrics]
     timestamp: str
 
 
@@ -131,6 +155,14 @@ class Algorithm:
     
     name: str = "base"
     description: str = "Base algorithm"
+    
+    # Coverage capabilities (override in subclasses)
+    detects_false_attribution: bool = False
+    detects_contradictions: bool = False
+    detects_extrinsic: bool = False
+    detects_intrinsic: bool = False
+    strengths: List[str] = []
+    weaknesses: List[str] = []
     
     def __init__(self):
         self.status = AlgorithmStatus.AVAILABLE
@@ -151,6 +183,47 @@ class Algorithm:
             - reason: Explanation of the result
         """
         raise NotImplementedError
+    
+    def get_coverage_metrics(self, domain_scores: Dict[str, float], overall_accuracy: float) -> CoverageMetrics:
+        """Calculate coverage metrics based on test results."""
+        # Determine coverage level
+        if self.status == AlgorithmStatus.UNAVAILABLE:
+            level = CoverageLevel.MINIMAL
+        elif overall_accuracy >= 0.9:
+            level = CoverageLevel.EXCELLENT
+        elif overall_accuracy >= 0.7:
+            level = CoverageLevel.GOOD
+        elif overall_accuracy >= 0.5:
+            level = CoverageLevel.MODERATE
+        elif overall_accuracy >= 0.3:
+            level = CoverageLevel.WEAK
+        else:
+            level = CoverageLevel.MINIMAL
+        
+        # Calculate coverage score (0-100)
+        # Based on: accuracy (50%), detection capabilities (30%), domain coverage (20%)
+        capability_score = sum([
+            self.detects_false_attribution,
+            self.detects_contradictions,
+            self.detects_extrinsic,
+            self.detects_intrinsic
+        ]) / 4.0
+        
+        domain_avg = sum(domain_scores.values()) / len(domain_scores) if domain_scores else 0
+        
+        score = (overall_accuracy * 50) + (capability_score * 30) + (domain_avg * 20)
+        
+        return CoverageMetrics(
+            level=level,
+            score=score,
+            detects_false_attribution=self.detects_false_attribution,
+            detects_contradictions=self.detects_contradictions,
+            detects_extrinsic=self.detects_extrinsic,
+            detects_intrinsic=self.detects_intrinsic,
+            domain_coverage=domain_scores,
+            strengths=self.strengths,
+            weaknesses=self.weaknesses
+        )
 
 
 class SCPAlgorithm(Algorithm):
@@ -158,6 +231,24 @@ class SCPAlgorithm(Algorithm):
     
     name = "SCP"
     description = "Local KB verification using semantic embeddings (~10ms, 0 API calls)"
+    
+    # Coverage capabilities
+    detects_false_attribution = True   # Can detect wrong subject for same predicate
+    detects_contradictions = True      # Has contradiction detection
+    detects_extrinsic = True           # Fails on unknown facts
+    detects_intrinsic = True           # Catches modified facts
+    strengths = [
+        "Very fast (~10ms)",
+        "Zero API calls",
+        "Deterministic results",
+        "Proof subgraph for auditing",
+        "Contradiction detection",
+    ]
+    weaknesses = [
+        "Limited to facts in KB",
+        "Requires KB maintenance",
+        "Semantic similarity can soft-match wrong subjects",
+    ]
     
     def _setup(self):
         try:
@@ -227,6 +318,25 @@ class WikidataAlgorithm(Algorithm):
     name = "Wikidata"
     description = "Wikidata SPARQL queries (~200ms, free public API)"
     
+    # Coverage capabilities
+    detects_false_attribution = True   # Can query who actually invented X
+    detects_contradictions = True      # Returns correct answer vs claimed
+    detects_extrinsic = False          # Only verifies, doesn't catch additions
+    detects_intrinsic = True           # Catches wrong facts
+    strengths = [
+        "100M+ facts available",
+        "No training required",
+        "Structured provenance",
+        "Free public API",
+        "High accuracy for supported predicates",
+    ]
+    weaknesses = [
+        "~200ms latency (network)",
+        "Limited predicate support",
+        "Cannot verify all claim types",
+        "Rate limited",
+    ]
+    
     def _setup(self):
         try:
             from wikidata_verifier import WikidataVerifier, VerificationStatus
@@ -257,6 +367,24 @@ class LLMJudgeAlgorithm(Algorithm):
     
     name = "LLM-Judge"
     description = "LLM verification (~200ms, 1 API call per claim)"
+    
+    # Coverage capabilities
+    detects_false_attribution = True   # LLM knows common facts
+    detects_contradictions = True      # LLM can reason about contradictions
+    detects_extrinsic = True           # LLM can identify fabricated info
+    detects_intrinsic = True           # LLM can catch modified facts
+    strengths = [
+        "Broad knowledge coverage",
+        "Can verify complex claims",
+        "Natural language understanding",
+        "No KB maintenance needed",
+    ]
+    weaknesses = [
+        "LLM can also hallucinate",
+        "Requires API key and costs $",
+        "~200ms latency per call",
+        "Non-deterministic",
+    ]
     
     def _setup(self):
         try:
@@ -300,6 +428,22 @@ class SelfConsistencyAlgorithm(Algorithm):
     name = "Self-Consistency"
     description = "Multiple LLM samples (~500ms, 3-5 API calls)"
     
+    # Coverage capabilities
+    detects_false_attribution = True
+    detects_contradictions = True
+    detects_extrinsic = True
+    detects_intrinsic = True
+    strengths = [
+        "More robust than single LLM call",
+        "Catches LLM inconsistencies",
+        "Better accuracy through voting",
+    ]
+    weaknesses = [
+        "3-5x more expensive",
+        "Higher latency",
+        "Still relies on LLM knowledge",
+    ]
+    
     def _setup(self):
         try:
             from hallucination_strategies import SelfConsistencyStrategy, mock_llm
@@ -339,6 +483,24 @@ class KnowShowGoAlgorithm(Algorithm):
     name = "KnowShowGo"
     description = "Fuzzy ontology graph (~10ms, requires KSG server)"
     
+    # Coverage capabilities (when available)
+    detects_false_attribution = True
+    detects_contradictions = True
+    detects_extrinsic = True
+    detects_intrinsic = True
+    strengths = [
+        "Fuzzy matching for nuanced claims",
+        "Version history for auditing",
+        "Weighted associations",
+        "Community governance",
+        "Cognitive architecture",
+    ]
+    weaknesses = [
+        "Requires KnowShowGo server",
+        "Needs initial KB population",
+        "External dependency",
+    ]
+    
     def _setup(self):
         # KnowShowGo requires external server
         self.status = AlgorithmStatus.UNAVAILABLE
@@ -353,6 +515,22 @@ class VerifiedMemoryAlgorithm(Algorithm):
     
     name = "VerifiedMemory"
     description = "Cached KB + LLM fallback (~50ms avg)"
+    
+    # Coverage capabilities
+    detects_false_attribution = True
+    detects_contradictions = True
+    detects_extrinsic = True
+    detects_intrinsic = True
+    strengths = [
+        "Fast cache lookups",
+        "Provenance tracking",
+        "Persistent storage",
+        "LLM fallback option",
+    ]
+    weaknesses = [
+        "Cache needs warming",
+        "Depends on underlying prover",
+    ]
     
     def _setup(self):
         try:
@@ -476,7 +654,21 @@ def run_algorithm_benchmark(
     print(f"Description: {algorithm.description}")
     print(f"Status: {algorithm.status.value} - {algorithm.status_reason}")
     
+    # Print detection capabilities
+    print(f"\nDetection Capabilities:")
+    caps = []
+    if algorithm.detects_false_attribution:
+        caps.append("False Attribution")
+    if algorithm.detects_contradictions:
+        caps.append("Contradictions")
+    if algorithm.detects_extrinsic:
+        caps.append("Extrinsic (added info)")
+    if algorithm.detects_intrinsic:
+        caps.append("Intrinsic (modified facts)")
+    print(f"  {', '.join(caps) if caps else 'None'}")
+    
     if algorithm.status == AlgorithmStatus.UNAVAILABLE:
+        coverage = algorithm.get_coverage_metrics({}, 0.0)
         return AlgorithmResult(
             name=algorithm.name,
             description=algorithm.description,
@@ -485,6 +677,7 @@ def run_algorithm_benchmark(
             test_sets={},
             overall_accuracy=0.0,
             overall_latency_ms=0.0,
+            coverage=coverage,
             timestamp=datetime.now().isoformat()
         )
     
@@ -501,6 +694,16 @@ def run_algorithm_benchmark(
     total_passed = sum(r.passed for r in set_results.values())
     total_claims = sum(r.claims_tested for r in set_results.values())
     total_latency = sum(r.avg_latency_ms * r.claims_tested for r in set_results.values())
+    overall_accuracy = total_passed / total_claims if total_claims else 0
+    
+    # Calculate domain coverage scores
+    domain_scores = {k: r.accuracy for k, r in set_results.items()}
+    
+    # Get coverage metrics
+    coverage = algorithm.get_coverage_metrics(domain_scores, overall_accuracy)
+    
+    # Print coverage summary
+    print(f"\n  Coverage: {coverage.level.value.upper()} (score: {coverage.score:.0f}/100)")
     
     return AlgorithmResult(
         name=algorithm.name,
@@ -508,8 +711,9 @@ def run_algorithm_benchmark(
         status=algorithm.status,
         status_reason=algorithm.status_reason,
         test_sets=set_results,
-        overall_accuracy=total_passed / total_claims if total_claims else 0,
+        overall_accuracy=overall_accuracy,
         overall_latency_ms=total_latency / total_claims if total_claims else 0,
+        coverage=coverage,
         timestamp=datetime.now().isoformat()
     )
 
@@ -520,19 +724,30 @@ def print_summary(results: List[AlgorithmResult]):
     print("BENCHMARK SUMMARY")
     print("=" * 70)
     
-    print(f"\n{'Algorithm':<20} {'Status':<12} {'Accuracy':<10} {'Latency':<12}")
-    print("-" * 54)
+    print(f"\n{'Algorithm':<16} {'Status':<11} {'Accuracy':<9} {'Latency':<10} {'Coverage':<12} {'Score'}")
+    print("-" * 75)
     
     for r in results:
         status = r.status.value[:10]
+        coverage_level = r.coverage.level.value if r.coverage else "N/A"
+        coverage_score = f"{r.coverage.score:.0f}/100" if r.coverage else "N/A"
+        
         if r.status == AlgorithmStatus.AVAILABLE:
-            print(f"{r.name:<20} {status:<12} {r.overall_accuracy:>6.0%}     {r.overall_latency_ms:>6.1f}ms")
+            print(f"{r.name:<16} {status:<11} {r.overall_accuracy:>5.0%}     {r.overall_latency_ms:>6.1f}ms   {coverage_level:<12} {coverage_score}")
         elif r.status == AlgorithmStatus.MOCK_ONLY:
-            print(f"{r.name:<20} {status:<12} {r.overall_accuracy:>6.0%}*    {r.overall_latency_ms:>6.1f}ms")
+            print(f"{r.name:<16} {status:<11} {r.overall_accuracy:>5.0%}*    {r.overall_latency_ms:>6.1f}ms   {coverage_level:<12} {coverage_score}")
         else:
-            print(f"{r.name:<20} {status:<12} {'N/A':>6}     {'N/A':>6}")
+            print(f"{r.name:<16} {status:<11} {'N/A':>5}     {'N/A':>6}    {coverage_level:<12} {coverage_score}")
     
     print("\n* = Using mock implementation")
+    
+    # Print coverage legend
+    print("\nCoverage Levels:")
+    print("  EXCELLENT (90%+): Comprehensive detection across all hallucination types")
+    print("  GOOD (70-89%):    Reliable detection for most claim types")
+    print("  MODERATE (50-69%): Partial detection, some blind spots")
+    print("  WEAK (30-49%):    Limited reliability, use with caution")
+    print("  MINIMAL (<30%):   Not recommended for production use")
 
 
 def export_markdown(results: List[AlgorithmResult]) -> str:
@@ -544,22 +759,70 @@ def export_markdown(results: List[AlgorithmResult]) -> str:
         "",
         "### Algorithm Comparison",
         "",
-        "| Algorithm | Status | Accuracy | Latency | Description |",
-        "|-----------|--------|----------|---------|-------------|",
+        "| Algorithm | Status | Accuracy | Coverage | Score | Latency |",
+        "|-----------|--------|----------|----------|-------|---------|",
     ]
     
     for r in results:
         status = r.status.value
+        coverage = r.coverage.level.value.upper() if r.coverage else "N/A"
+        score = f"{r.coverage.score:.0f}/100" if r.coverage else "N/A"
         if r.status == AlgorithmStatus.UNAVAILABLE:
             acc = "N/A"
             lat = "N/A"
         else:
             acc = f"{r.overall_accuracy:.0%}"
             lat = f"{r.overall_latency_ms:.1f}ms"
-        lines.append(f"| {r.name} | {status} | {acc} | {lat} | {r.description[:40]}... |")
+        lines.append(f"| {r.name} | {status} | {acc} | {coverage} | {score} | {lat} |")
     
     lines.extend([
         "",
+        "### Coverage Legend",
+        "",
+        "| Level | Accuracy | Description |",
+        "|-------|----------|-------------|",
+        "| EXCELLENT | 90%+ | Comprehensive detection across all types |",
+        "| GOOD | 70-89% | Reliable for most claim types |",
+        "| MODERATE | 50-69% | Partial detection, some blind spots |",
+        "| WEAK | 30-49% | Limited reliability |",
+        "| MINIMAL | <30% | Not recommended for production |",
+        "",
+        "### Detection Capabilities",
+        "",
+        "| Algorithm | False Attribution | Contradictions | Extrinsic | Intrinsic |",
+        "|-----------|-------------------|----------------|-----------|-----------|",
+    ])
+    
+    for r in results:
+        if r.coverage:
+            fa = "✓" if r.coverage.detects_false_attribution else "✗"
+            co = "✓" if r.coverage.detects_contradictions else "✗"
+            ex = "✓" if r.coverage.detects_extrinsic else "✗"
+            int_ = "✓" if r.coverage.detects_intrinsic else "✗"
+            lines.append(f"| {r.name} | {fa} | {co} | {ex} | {int_} |")
+    
+    lines.extend([
+        "",
+        "### Strengths & Weaknesses",
+        "",
+    ])
+    
+    for r in results:
+        if r.coverage and (r.coverage.strengths or r.coverage.weaknesses):
+            lines.append(f"#### {r.name}")
+            lines.append("")
+            if r.coverage.strengths:
+                lines.append("**Strengths:**")
+                for s in r.coverage.strengths:
+                    lines.append(f"- {s}")
+            if r.coverage.weaknesses:
+                lines.append("")
+                lines.append("**Weaknesses:**")
+                for w in r.coverage.weaknesses:
+                    lines.append(f"- {w}")
+            lines.append("")
+    
+    lines.extend([
         "### Test Set Breakdown",
         "",
     ])

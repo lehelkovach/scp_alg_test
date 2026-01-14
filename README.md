@@ -12,40 +12,17 @@ A comprehensive toolkit for detecting hallucinations in Large Language Model (LL
 # Install dependencies
 pip install -r requirements.txt
 
-# Run benchmark suite (all algorithms)
+# Run benchmark suite
+python benchmark.py
+
+# Run with verbose output
 python benchmark.py --verbose
 
-# Run specific algorithm
-python benchmark.py --algorithm scp
-
-# Export benchmark results to markdown
+# Export results to markdown
 python benchmark.py --export
 
 # Run unit tests (53 tests)
 pytest tests/test_scp.py -v
-```
-
-## Repository Structure
-
-```
-scp_alg_test/
-├── scp.py                   # Core SCP hallucination prover
-├── wikidata_verifier.py     # Wikidata API verification
-├── hallucination_strategies.py  # LLM-based strategies
-├── verified_memory.py       # Verification + caching layer
-├── ksg_ground_truth.py      # KnowShowGo ground truth
-├── ksg_integration.py       # KnowShowGo REST client
-│
-├── benchmark.py             # Algorithm benchmark suite
-├── tests/
-│   └── test_scp.py         # 53 unit tests
-│
-├── docs/
-│   ├── opus.txt            # Design decisions
-│   └── ...
-│
-├── requirements.txt
-└── README.md
 ```
 
 ## Benchmark Results
@@ -54,34 +31,86 @@ scp_alg_test/
 
 ### Algorithm Comparison
 
-| Algorithm | Status | Accuracy | Latency | Description |
-|-----------|--------|----------|---------|-------------|
-| **SCP** | ✅ available | **78%** | 2.4ms | Local KB with semantic embeddings |
-| **Wikidata** | ✅ available | 33% | ~200ms | 100M+ facts via SPARQL |
-| **VerifiedMemory** | ✅ available | 67% | 0.3ms | Cached KB + fallback |
-| **LLM-Judge** | ⚠️ mock | 22% | ~200ms | Requires API key |
-| **Self-Consistency** | ⚠️ mock | 22% | ~500ms | Requires API key |
-| **KnowShowGo** | ❌ unavailable | N/A | N/A | Requires KSG server |
+| Algorithm | Status | Accuracy | Coverage | Score | Latency |
+|-----------|--------|----------|----------|-------|---------|
+| **SCP** | ✅ available | **78%** | GOOD | 84/100 | 2.4ms |
+| **VerifiedMemory** | ✅ available | 67% | MODERATE | 77/100 | 0.3ms |
+| **Wikidata** | ✅ available | 33% | WEAK | 46/100 | ~200ms |
+| **LLM-Judge** | ⚠️ mock | 22% | MINIMAL | 46/100 | ~200ms |
+| **Self-Consistency** | ⚠️ mock | 22% | MINIMAL | 46/100 | ~500ms |
+| **KnowShowGo** | ❌ unavailable | N/A | MINIMAL | 30/100 | N/A |
 
-### Test Set Breakdown (SCP)
+### Coverage Levels
 
-| Test Set | Passed | Total | Accuracy | Avg Latency |
-|----------|--------|-------|----------|-------------|
-| Inventions & Discoveries | 5 | 6 | 83% | 0.7ms |
-| Geography & Locations | 6 | 6 | 100% | 0.1ms |
-| Creators & Founders | 3 | 6 | 50% | 6.5ms |
+| Level | Accuracy | Description |
+|-------|----------|-------------|
+| **EXCELLENT** | 90%+ | Comprehensive detection across all hallucination types |
+| **GOOD** | 70-89% | Reliable detection for most claim types |
+| **MODERATE** | 50-69% | Partial detection, some blind spots |
+| **WEAK** | 30-49% | Limited reliability, use with caution |
+| **MINIMAL** | <30% | Not recommended for production use |
 
-### Algorithm Status Legend
+### Detection Capabilities
 
-- ✅ **available**: Fully functional, ready to use
-- ⚠️ **mock_only**: Uses mock implementation (set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` for real)
-- ❌ **unavailable**: Missing external dependency (see reason in output)
+| Algorithm | False Attribution | Contradictions | Extrinsic | Intrinsic |
+|-----------|-------------------|----------------|-----------|-----------|
+| SCP | ✓ | ✓ | ✓ | ✓ |
+| Wikidata | ✓ | ✓ | ✗ | ✓ |
+| LLM-Judge | ✓ | ✓ | ✓ | ✓ |
+| Self-Consistency | ✓ | ✓ | ✓ | ✓ |
+| KnowShowGo | ✓ | ✓ | ✓ | ✓ |
+| VerifiedMemory | ✓ | ✓ | ✓ | ✓ |
+
+**Hallucination Types:**
+- **False Attribution**: Wrong subject (e.g., "Edison invented the telephone")
+- **Contradictions**: Conflicts with known facts (e.g., "Einstein born in France")
+- **Extrinsic**: Added information not in source
+- **Intrinsic**: Modified facts from source
+
+### Test Set Breakdown (SCP - Best Performer)
+
+| Test Set | Passed | Total | Accuracy |
+|----------|--------|-------|----------|
+| Inventions & Discoveries | 5 | 6 | 83% |
+| Geography & Locations | 6 | 6 | 100% |
+| Creators & Founders | 3 | 6 | 50% |
+
+## Repository Structure
+
+```
+scp_alg_test/
+├── scp.py                   # Core SCP prover (GOOD coverage)
+├── wikidata_verifier.py     # Wikidata API (WEAK coverage)
+├── hallucination_strategies.py  # LLM strategies (MINIMAL when mocked)
+├── verified_memory.py       # Caching layer (MODERATE coverage)
+├── ksg_ground_truth.py      # KnowShowGo (unavailable)
+├── ksg_integration.py       # KnowShowGo client
+│
+├── benchmark.py             # Benchmark suite with coverage metrics
+├── tests/
+│   └── test_scp.py         # 53 unit tests
+│
+├── docs/
+│   └── ...
+│
+└── README.md
+```
 
 ## Algorithms
 
-### 1. SCP (Symbolic Consistency Probing)
+### 1. SCP (Symbolic Consistency Probing) - GOOD Coverage
 
 Local knowledge base verification using semantic embeddings.
+
+**Strengths:**
+- Very fast (~10ms)
+- Zero API calls
+- Deterministic results
+- Proof subgraph for auditing
+
+**Weaknesses:**
+- Limited to facts in KB
+- Requires KB maintenance
 
 ```python
 from scp import HyperKB, SCPProber, RuleBasedExtractor, HashingEmbeddingBackend
@@ -94,88 +123,63 @@ report = prober.probe("Edison invented the telephone")
 print(report.results[0].verdict)  # FAIL
 ```
 
-**Verdicts:** PASS, SOFT_PASS, FAIL, CONTRADICT, UNKNOWN
-
-### 2. Wikidata Verification
+### 2. Wikidata - WEAK Coverage
 
 Queries Wikidata's 100M+ facts via SPARQL.
+
+**Strengths:**
+- 100M+ facts available
+- No training required
+- High accuracy for supported predicates
+
+**Weaknesses:**
+- Limited predicate support
+- ~200ms latency
 
 ```python
 from wikidata_verifier import WikidataVerifier
 
 verifier = WikidataVerifier()
 result = verifier.verify("Bell invented the telephone")
-print(result.status)  # VERIFIED
 ```
 
-### 3. LLM-as-Judge
-
-Uses an LLM to verify claims (requires API key).
-
-```python
-from hallucination_strategies import LLMJudgeStrategy
-
-def my_llm(prompt):
-    # Your LLM API call here
-    pass
-
-judge = LLMJudgeStrategy(my_llm)
-result = judge.check("Edison invented the telephone")
-```
-
-### 4. Verified Memory
+### 3. Verified Memory - MODERATE Coverage
 
 Cached verification with provenance tracking.
+
+**Strengths:**
+- Fast cache lookups
+- Provenance tracking
+- Persistent storage
 
 ```python
 from verified_memory import VerifiedMemory, HallucinationProver
 
-memory = VerifiedMemory("./cache")
 prover = HallucinationProver()
-
 status, provenance, claim = prover.prove("Bell invented the telephone")
-print(status)  # VERIFIED
 ```
 
-### 5. KnowShowGo (Future)
-
-Fuzzy ontology knowledge graph. See `docs/knowshowgo_integration_spec.md`.
-
-## Running Tests
+## Running Benchmarks
 
 ```bash
-# Unit tests (53 tests)
-pytest tests/test_scp.py -v
-
-# Benchmark all algorithms
+# Full benchmark with all algorithms
 python benchmark.py
 
-# Benchmark with verbose output
+# Verbose output (shows each claim)
 python benchmark.py --verbose
 
-# Export results to markdown
+# Single algorithm
+python benchmark.py --algorithm scp
+
+# Export to markdown
 python benchmark.py --export
 ```
-
-## Test Coverage
-
-| Test Class | Tests | Coverage |
-|------------|-------|----------|
-| TestClaim | 4 | Claim dataclass |
-| TestRuleBasedExtractor | 8 | Claim extraction |
-| TestHyperKB | 9 | Knowledge base |
-| TestEmbeddingBackends | 6 | Similarity matching |
-| TestSCPProber | 11 | Core prober |
-| TestVerdictScenarios | 4 | Verdict types |
-| TestEdgeCases | 5 | Edge cases |
-| TestFalseAttribution | 4 | Attribution errors |
-| TestCoreference | 2 | Pronoun handling |
 
 ## Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
-| `OPENAI_API_KEY` | Enable real LLM-as-Judge |
+| `OPENAI_API_KEY` | Enable real LLM-as-Judge (improves coverage) |
 | `ANTHROPIC_API_KEY` | Alternative LLM API |
 | `KSG_URL` | KnowShowGo server URL |
 
@@ -183,7 +187,6 @@ python benchmark.py --export
 
 - **Author:** Lehel Kovach
 - **AI Assistant:** Claude Opus 4.5 (Anthropic)
-- All commits tagged with `[Opus4.5]`
 
 ## License
 
