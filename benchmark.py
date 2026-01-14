@@ -52,6 +52,173 @@ class HallucinationType(Enum):
 
 
 # =============================================================================
+# IMPLEMENTATION GUIDANCE - What to build when tests fail
+# =============================================================================
+
+IMPLEMENTATION_GUIDANCE = {
+    # Per hallucination type - what's needed to detect it
+    HallucinationType.FALSE_ATTRIBUTION: {
+        "description": "Detect wrong subject for correct predicate/object",
+        "example": '"Edison invented telephone" should fail (Bell did)',
+        "fix": """
+IMPLEMENTATION NEEDED: Subject-Aware Matching
+─────────────────────────────────────────────
+In scp.py, update find_similar_facts() to compare subjects:
+
+    def find_similar_facts(self, claim, threshold=0.7):
+        matches = super().find_similar_facts(claim, threshold)
+        for score, (subj, pred, obj), rel_id in matches:
+            # If predicate+object match but subject differs = FALSE ATTRIBUTION
+            if (self._normalize(claim.predicate) == self._normalize(pred) and
+                self._normalize(claim.obj) == self._normalize(obj) and
+                self._normalize(claim.subject) != self._normalize(subj)):
+                return [(0.0, (subj, pred, obj), rel_id)]  # Return as contradiction
+        return matches
+
+Estimated time: 1-2 hours
+""",
+    },
+    HallucinationType.CONTRADICTION: {
+        "description": "Detect claims that conflict with known facts",
+        "example": '"Einstein born in France" should fail (born in Germany)',
+        "fix": """
+IMPLEMENTATION NEEDED: Expand Predicate Support
+───────────────────────────────────────────────
+For Wikidata (wikidata_verifier.py), add more predicates:
+
+    PREDICATE_MAPPING = {
+        "invented": "P61",
+        "discovered": "P61", 
+        "born_in": "P19",        # ADD: place of birth
+        "died_in": "P20",        # ADD: place of death
+        "located_in": "P131",    # ADD: located in territory
+        "capital_of": "P36",     # ADD: capital
+    }
+
+For SCP, ensure KB has the facts:
+    kb.add_fact("Einstein", "born_in", "Germany")
+
+Estimated time: 1-2 hours
+""",
+    },
+    HallucinationType.FABRICATION: {
+        "description": "Detect completely made-up facts",
+        "example": '"Curie invented smartphone" should fail (never happened)',
+        "fix": """
+IMPLEMENTATION NEEDED: Unknown Fact Detection
+─────────────────────────────────────────────
+Should return FAIL/REFUTED for claims with no KB match.
+
+For SCP: Already implemented (returns FAIL for no match)
+For Wikidata: Add fallback when SPARQL returns empty:
+
+    if not results:
+        return WikidataResult(
+            status=VerificationStatus.REFUTED,
+            reason="No evidence found in Wikidata"
+        )
+
+Estimated time: 30 minutes
+""",
+    },
+    HallucinationType.TRUE_FACT: {
+        "description": "Correctly verify true claims",
+        "example": '"Bell invented telephone" should pass',
+        "fix": """
+IMPLEMENTATION NEEDED: Expand Knowledge Base
+────────────────────────────────────────────
+Add more facts to the KB:
+
+    kb.add_facts_bulk([
+        ("Einstein", "born_in", "Germany"),
+        ("Python", "created_by", "Guido van Rossum"),
+        ("Great Wall", "located_in", "China"),
+    ])
+
+Or use external KB (Wikidata) for broader coverage.
+
+Estimated time: 30 minutes (manual) or 4-8 hours (auto-import)
+""",
+    },
+}
+
+# Per algorithm - specific implementation needs
+ALGORITHM_IMPLEMENTATION_NEEDS = {
+    "SCP": {
+        "false_attr_fix": """
+FIX: Update SCPProber._probe_claim() in scp.py:
+────────────────────────────────────────────────
+Add subject comparison after finding semantic match:
+
+    if best_match and best_score > self.soft_threshold:
+        match_subj, match_pred, match_obj = best_match
+        # Check if this is actually a false attribution
+        if (claim.predicate == match_pred and claim.obj == match_obj 
+            and claim.subject != match_subj):
+            return ProbeResult(
+                claim=claim,
+                verdict=Verdict.CONTRADICT,
+                score=0.0,
+                reason=f"False attribution: {match_subj} {match_pred} {match_obj}, not {claim.subject}"
+            )
+""",
+    },
+    "Wikidata": {
+        "predicate_fix": """
+FIX: Add predicates to wikidata_verifier.py:
+─────────────────────────────────────────────
+PREDICATE_MAPPING = {
+    # Existing
+    "invented": "P61",
+    "discovered": "P61",
+    # Add these:
+    "born_in": "P19",
+    "located_in": "P131", 
+    "capital_of": "P36",
+    "created_by": "P170",
+    "founded_by": "P112",
+}
+
+Then add SPARQL templates for each.
+""",
+    },
+    "LLM-Judge": {
+        "api_fix": """
+FIX: Add real LLM in hallucination_strategies.py:
+─────────────────────────────────────────────────
+1. Set environment variable:
+   export OPENAI_API_KEY=sk-...
+
+2. Replace mock_llm with:
+   
+   import openai
+   
+   def real_llm(prompt: str) -> str:
+       response = openai.ChatCompletion.create(
+           model="gpt-4o-mini",
+           messages=[{"role": "user", "content": prompt}]
+       )
+       return response.choices[0].message.content
+
+3. Update LLMJudgeStrategy to use real_llm
+""",
+    },
+    "KnowShowGo": {
+        "server_fix": """
+FIX: Deploy KnowShowGo server:
+──────────────────────────────
+1. Clone: git clone https://github.com/lehelkovach/knowshowgo
+2. Install: npm install
+3. Run: npm start
+4. Set: export KSG_URL=http://localhost:3000
+
+See: docs/knowshowgo_integration_spec.md
+""",
+    },
+}
+
+
+# =============================================================================
 # TEST SET 1: FALSE ATTRIBUTION
 # Tests if algorithm can detect wrong subject attribution
 # e.g., "Edison invented telephone" when Bell did
@@ -695,6 +862,12 @@ def run_benchmark(
             type_label = h_type.value
             print(f"  {status} [{type_label:<12}] {claim[:40]}...")
             print(f"      Expected: {expected_str}, Got: {actual_str} ({verdict})")
+            
+            # Show inline guidance for failures
+            if not passed and h_type in IMPLEMENTATION_GUIDANCE:
+                guidance = IMPLEMENTATION_GUIDANCE[h_type]
+                print(f"      ⚠️  {guidance['description']}")
+                print(f"      💡 Example: {guidance['example']}")
     
     total_time = (time.perf_counter() - total_start) * 1000
     passed_count = sum(1 for r in results if r.passed)
@@ -812,6 +985,150 @@ def run_algorithm_benchmark(
         coverage=coverage,
         timestamp=datetime.now().isoformat()
     )
+
+
+def print_implementation_guidance(results: List[AlgorithmResult], verbose: bool = False):
+    """Print what needs to be built to improve detection coverage."""
+    print("\n" + "=" * 70)
+    print("IMPLEMENTATION GUIDANCE - What to Build")
+    print("=" * 70)
+    
+    # Collect all failures by type across algorithms
+    failures_by_type = {h_type: [] for h_type in HallucinationType}
+    failures_by_algo = {}
+    
+    for r in results:
+        if r.status == AlgorithmStatus.UNAVAILABLE:
+            failures_by_algo[r.name] = {
+                "unavailable": True,
+                "reason": r.status_reason
+            }
+            continue
+        
+        failures_by_algo[r.name] = {
+            "unavailable": False,
+            "failed_types": []
+        }
+        
+        for set_result in r.test_sets.values():
+            for claim_result in set_result.results:
+                if not claim_result.passed:
+                    failures_by_type[claim_result.hallucination_type].append({
+                        "algo": r.name,
+                        "claim": claim_result.claim,
+                        "expected": claim_result.expected,
+                        "got": claim_result.actual,
+                        "verdict": claim_result.verdict,
+                    })
+                    failures_by_algo[r.name]["failed_types"].append(claim_result.hallucination_type)
+    
+    # Print urgent fixes (unavailable algorithms)
+    unavailable = [a for a, info in failures_by_algo.items() if info.get("unavailable")]
+    if unavailable:
+        print("\n⚠️  UNAVAILABLE ALGORITHMS - Require Setup")
+        print("-" * 60)
+        for algo in unavailable:
+            print(f"\n  {algo}: {failures_by_algo[algo]['reason']}")
+            if algo in ALGORITHM_IMPLEMENTATION_NEEDS:
+                for fix_key, fix_text in ALGORITHM_IMPLEMENTATION_NEEDS[algo].items():
+                    if "server" in fix_key or "api" in fix_key:
+                        print(fix_text)
+    
+    # Print by hallucination type
+    print("\n📋 FAILURES BY HALLUCINATION TYPE")
+    print("-" * 60)
+    
+    for h_type in [HallucinationType.FALSE_ATTRIBUTION, HallucinationType.CONTRADICTION, 
+                   HallucinationType.FABRICATION, HallucinationType.TRUE_FACT]:
+        type_failures = failures_by_type[h_type]
+        if not type_failures:
+            print(f"\n  ✓ {h_type.value}: All tests passing!")
+            continue
+        
+        print(f"\n  ✗ {h_type.value}: {len(type_failures)} failures")
+        
+        # Show specific failures if verbose
+        if verbose:
+            for f in type_failures[:3]:  # Show first 3
+                expected_str = "TRUE" if f["expected"] else "FALSE"
+                got_str = "TRUE" if f["got"] else ("FALSE" if f["got"] is False else "N/A")
+                print(f"      • [{f['algo']}] \"{f['claim'][:40]}...\"")
+                print(f"        Expected: {expected_str}, Got: {got_str} ({f['verdict']})")
+        
+        # Show implementation guidance
+        if h_type in IMPLEMENTATION_GUIDANCE:
+            guidance = IMPLEMENTATION_GUIDANCE[h_type]
+            print(f"\n    📝 To fix {h_type.value}:")
+            print(f"    {guidance['description']}")
+            if verbose:
+                print(guidance['fix'])
+    
+    # Print algorithm-specific fixes
+    print("\n🔧 ALGORITHM-SPECIFIC FIXES")
+    print("-" * 60)
+    
+    for algo, info in failures_by_algo.items():
+        if info.get("unavailable"):
+            continue
+        
+        failed_types = list(set(info.get("failed_types", [])))
+        if not failed_types:
+            print(f"\n  ✓ {algo}: All tests passing!")
+            continue
+        
+        print(f"\n  {algo}: {len(failed_types)} type(s) with failures")
+        
+        # Show algorithm-specific implementation needs
+        if algo in ALGORITHM_IMPLEMENTATION_NEEDS:
+            for fix_key, fix_text in ALGORITHM_IMPLEMENTATION_NEEDS[algo].items():
+                if "false_attr" in fix_key and HallucinationType.FALSE_ATTRIBUTION in failed_types:
+                    print(f"\n    Fix for false attribution:")
+                    if verbose:
+                        print(fix_text)
+                    else:
+                        print(f"    (run with --verbose to see implementation details)")
+                elif "predicate" in fix_key and HallucinationType.CONTRADICTION in failed_types:
+                    print(f"\n    Fix for contradiction detection:")
+                    if verbose:
+                        print(fix_text)
+                    else:
+                        print(f"    (run with --verbose to see implementation details)")
+    
+    # Print quick summary
+    print("\n" + "=" * 70)
+    print("🎯 PRIORITY ACTION ITEMS")
+    print("=" * 70)
+    
+    priority_items = []
+    
+    # Check for false attribution failures
+    fa_failures = len(failures_by_type[HallucinationType.FALSE_ATTRIBUTION])
+    if fa_failures > 0:
+        priority_items.append(("HIGH", f"Fix false attribution ({fa_failures} failures)", "1-2 hours", 
+            "Update scp.py: Add subject-aware matching in find_similar_facts()"))
+    
+    # Check for contradiction failures
+    cont_failures = len(failures_by_type[HallucinationType.CONTRADICTION])
+    if cont_failures > 0:
+        priority_items.append(("HIGH", f"Fix contradiction detection ({cont_failures} failures)", "1-2 hours",
+            "Expand KB facts: birth places, locations, capitals"))
+    
+    # Check for unavailable algorithms
+    if "KnowShowGo" in unavailable:
+        priority_items.append(("MEDIUM", "Deploy KnowShowGo server", "4-8 hours",
+            "See docs/knowshowgo_integration_spec.md"))
+    
+    if "LLM-Judge" in [a for a in failures_by_algo if failures_by_algo[a].get("unavailable")]:
+        priority_items.append(("LOW", "Enable real LLM", "30 mins",
+            "Set OPENAI_API_KEY environment variable"))
+    
+    if priority_items:
+        print(f"\n{'Priority':<8} {'Task':<45} {'Time':<10} Action")
+        print("-" * 80)
+        for priority, task, time_est, action in priority_items:
+            print(f"{priority:<8} {task:<45} {time_est:<10} {action}")
+    else:
+        print("\n  🎉 All systems operational - no urgent fixes needed!")
 
 
 def print_summary(results: List[AlgorithmResult]):
@@ -937,6 +1254,46 @@ def export_markdown(results: List[AlgorithmResult]) -> str:
             )
         lines.append("")
     
+    # Add Implementation Guidance section
+    lines.extend([
+        "### Implementation Guidance",
+        "",
+        "When tests fail, here's what to implement:",
+        "",
+    ])
+    
+    for h_type in [HallucinationType.FALSE_ATTRIBUTION, HallucinationType.CONTRADICTION,
+                   HallucinationType.FABRICATION]:
+        if h_type in IMPLEMENTATION_GUIDANCE:
+            guidance = IMPLEMENTATION_GUIDANCE[h_type]
+            lines.extend([
+                f"#### {h_type.value}",
+                "",
+                f"**Problem:** {guidance['description']}",
+                f"**Example:** {guidance['example']}",
+                "",
+                "**Solution:**",
+                "```python",
+                guidance['fix'].strip(),
+                "```",
+                "",
+            ])
+    
+    # Add algorithm-specific needs
+    lines.extend([
+        "### Algorithm-Specific Requirements",
+        "",
+    ])
+    
+    for algo_name, needs in ALGORITHM_IMPLEMENTATION_NEEDS.items():
+        lines.append(f"#### {algo_name}")
+        lines.append("")
+        for fix_key, fix_text in needs.items():
+            lines.append("```")
+            lines.append(fix_text.strip())
+            lines.append("```")
+            lines.append("")
+    
     return "\n".join(lines)
 
 
@@ -982,6 +1339,9 @@ def main():
         results.append(result)
     
     print_summary(results)
+    
+    # Always print implementation guidance
+    print_implementation_guidance(results, args.verbose)
     
     if args.export:
         markdown = export_markdown(results)
