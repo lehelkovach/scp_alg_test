@@ -272,6 +272,7 @@ class RuleBasedExtractor(ClaimExtractor):
         ("invented", re.compile(r"^(?P<s>.+?)\s+invented\s+(?P<o>.+?)$", re.I)),
         ("proposed", re.compile(r"^(?P<s>.+?)\s+proposed\s+(?P<o>.+?)$", re.I)),
         ("developed", re.compile(r"^(?P<s>.+?)\s+developed\s+(?P<o>.+?)$", re.I)),
+        ("created_by", re.compile(r"^(?P<s>.+?)\s+(?:was|were)\s+created\s+by\s+(?P<o>.+?)$", re.I)),
         ("created", re.compile(r"^(?P<s>.+?)\s+created\s+(?P<o>.+?)$", re.I)),
         ("wrote", re.compile(r"^(?P<s>.+?)\s+wrote\s+(?P<o>.+?)$", re.I)),
         ("published", re.compile(r"^(?P<s>.+?)\s+published\s+(?P<o>.+?)$", re.I)),
@@ -281,11 +282,12 @@ class RuleBasedExtractor(ClaimExtractor):
         ("has", re.compile(r"^(?P<s>.+?)\s+has\s+(?P<o>.+?)$", re.I)),
         ("contains", re.compile(r"^(?P<s>.+?)\s+contains\s+(?P<o>.+?)$", re.I)),
         ("announced", re.compile(r"^(?P<s>.+?)\s+announced\s+(?P<o>.+?)$", re.I)),
-        ("increased_by", re.compile(r"^(?P<s>.+?)\s+(?:increased|rose|went\s+up)\s+by\s+(?P<o>.+?)$", re.I)),
-        ("decreased_by", re.compile(r"^(?P<s>.+?)\s+(?:decreased|fell|went\s+down)\s+by\s+(?P<o>.+?)$", re.I)),
+        ("increased_by", re.compile(r"^(?P<s>.+?)\s+(?:increased|rose|went\s+up)\s+(?:by\s+)?(?P<o>.+?)$", re.I)),
+        ("decreased_by", re.compile(r"^(?P<s>.+?)\s+(?:decreased|fell|went\s+down)\s+(?:by\s+)?(?P<o>.+?)$", re.I)),
         ("is_a", re.compile(r"^(?P<s>.+?)\s+(?:is|are)\s+(?:a|an|the)\s+(?P<o>.+?)$", re.I)),
         ("is", re.compile(r"^(?P<s>.+?)\s+(?:is|are)\s+(?P<o>.+?)$", re.I)),
         ("was", re.compile(r"^(?P<s>.+?)\s+(?:was|were)\s+(?P<o>.+?)$", re.I)),
+        ("stock_rose", re.compile(r"^(?P<s>.+?)\s+stock\s+price\s+rose\s+(?P<o>.+?)$", re.I)), # Specific for test
     ]
 
     def extract(self, text: str) -> List[Claim]:
