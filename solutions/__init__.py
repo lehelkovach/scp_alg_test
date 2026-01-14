@@ -5,13 +5,21 @@ Hallucination Detection Solutions
 Author: Lehel Kovach
 AI Assistant: Claude Opus 4.5 (Anthropic)
 
-This package contains multiple approaches to detecting LLM hallucinations:
+Three main approaches to detecting LLM hallucinations:
 
-1. SCP (Symbolic Consistency Probing) - KB-based verification
-2. Wikidata - External knowledge graph (100M+ facts)
-3. LLM Strategies - Self-consistency, LLM-as-judge, cross-model
-4. KnowShowGo - Cognitive architecture for ground truth
-5. Hybrid - Cascading pipeline combining all approaches
+1. SCP (solutions/scp/): Knowledge base verification
+   - KB mode: Pre-built knowledge base
+   - Context mode: RAG faithfulness checking
+   - API mode: REST service
+
+2. Wikidata (solutions/wikidata/): External knowledge graph
+   - 100M+ facts from Wikidata
+   - No setup required
+
+3. LLM (solutions/llm/): LLM-based strategies
+   - LLM-as-judge
+   - Self-consistency
+   - Cross-model verification
 """
 
 __author__ = "Lehel Kovach"
