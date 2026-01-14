@@ -422,6 +422,22 @@ class HyperKB:
         self.backend = embedding_backend or HashingEmbeddingBackend()
         self._fact_cache: Optional[List[Tuple[str, str, str, str]]] = None  # (s, p, o, rel_id)
 
+    def save_to_disk(self, filepath: str) -> None:
+        """Save the knowledge graph to a JSON file."""
+        data = nx.node_link_data(self.g)
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def load_from_disk(self, filepath: str) -> None:
+        """Load the knowledge graph from a JSON file."""
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            self.g = nx.node_link_graph(data)
+            self._fact_cache = None  # Invalidate cache
+        except FileNotFoundError:
+            pass
+
     def _norm_text(self, s: str) -> str:
         s = s.strip().lower()
         s = re.sub(r"\s+", " ", s)
