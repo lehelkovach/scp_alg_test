@@ -1,0 +1,241 @@
+# Agent Instructions for Hallucination Detection System
+# ======================================================
+# Author: Lehel Kovach
+# AI Assistant: Claude Opus 4.5 (Anthropic)
+# Last Updated: 2026-01-14
+
+## REPOSITORY OVERVIEW
+
+This repository implements hallucination detection algorithms for verifying LLM outputs.
+All implementation code lives in the `solution/` folder.
+
+## PROJECT STRUCTURE
+
+```
+scp_alg_test/
+├── solution/                    # ALL CODE LIVES HERE
+│   ├── __init__.py             # Package exports
+│   ├── scp.py                  # Core algorithm (GOOD coverage - 85/100)
+│   ├── wikidata_verifier.py    # External KB (WEAK coverage - 38/100)
+│   ├── hallucination_strategies.py  # LLM-based strategies
+│   ├── verified_memory.py      # Caching layer (GOOD coverage - 70/100)
+│   ├── ksg_ground_truth.py     # KnowShowGo integration (unavailable)
+│   ├── ksg_integration.py      # KnowShowGo examples
+│   ├── benchmark.py            # MAIN TEST RUNNER - run this first
+│   └── test_scp.py             # 53 unit tests
+│
+├── docs/                       # Documentation and notes
+│   ├── opus.txt               # AI decision log
+│   ├── implementation_roadmap.md
+│   ├── ksg_architecture.py    # KnowShowGo reference
+│   └── neuro_symbolic_architecture.py
+│
+├── README.md                   # Project overview
+├── requirements.txt            # Python dependencies
+├── .gitignore
+└── .agent-instructions         # THIS FILE
+```
+
+## FIRST STEPS FOR ANY AGENT
+
+1. **Run the benchmark first:**
+   ```bash
+   cd solution && python3 benchmark.py
+   ```
+   This shows current coverage gaps and what needs fixing.
+
+2. **Run tests:**
+   ```bash
+   cd solution && python3 -m pytest test_scp.py -v
+   ```
+   All 53 tests should pass.
+
+3. **Check implementation roadmap:**
+   Read `docs/implementation_roadmap.md` for prioritized fixes.
+
+## PYTHON FILE FORMAT CONVENTIONS
+
+All Python files follow this structure:
+
+```python
+#!/usr/bin/env python3
+"""
+Module Title
+============
+
+Author: Lehel Kovach
+AI Assistant: Claude Opus 4.5 (Anthropic)
+
+[Module description and purpose]
+
+Usage:
+    [Usage examples]
+"""
+
+# Standard library imports
+import os
+import sys
+
+# Third-party imports
+import numpy as np
+
+# Local imports
+from scp import HyperKB
+
+__author__ = "Lehel Kovach"
+__ai_assistant__ = "Claude Opus 4.5"
+
+# =============================================================================
+# SECTION NAME IN CAPS
+# =============================================================================
+
+class ClassName:
+    """
+    Class description.
+    
+    Attributes:
+        attr_name: Description
+    
+    Example:
+        >>> obj = ClassName()
+        >>> obj.method()
+    """
+    pass
+```
+
+## CONSOLE/LOG OUTPUT FORMAT
+
+Benchmark output follows this format:
+
+```
+======================================================================
+SECTION TITLE
+======================================================================
+
+[content]
+
+  Subsection
+  --------------------------------------------------
+  [details]
+
+Detection Coverage (from tests):
+--------------------------------------------------
+true_fact       ███████░░░   78% (7/9)
+false_attr      ██████░░░░   67% (2/3)
+```
+
+Progress indicators:
+- ✓ = passed/success
+- ✗ = failed
+- ⚠️ = warning/needs attention
+- 📋 = list/checklist
+- 🔧 = fix needed
+- 🎯 = priority item
+
+## HALLUCINATION TYPES
+
+| Type | Description | Detection Goal |
+|------|-------------|----------------|
+| TRUE_FACT | Correct claims | Should PASS |
+| FALSE_ATTRIBUTION | Wrong subject | "Edison invented telephone" → FAIL |
+| CONTRADICTION | Conflicts with KB | "Einstein born in France" → FAIL |
+| FABRICATION | Made up | "Curie invented smartphone" → FAIL |
+
+## CURRENT COVERAGE GAPS (priority order)
+
+1. **False Attribution** - SCP soft-matches wrong subjects
+   - Fix: Add subject-aware matching in `scp.py`
+   - Time: 1-2 hours
+
+2. **Contradiction** - Wikidata missing predicates
+   - Fix: Add born_in, located_in, capital_of to `wikidata_verifier.py`
+   - Time: 1-2 hours
+
+3. **KnowShowGo** - Server not deployed
+   - Fix: Deploy from github.com/lehelkovach/knowshowgo
+   - Time: 4-8 hours
+
+## KEY CLASSES AND METHODS
+
+### scp.py (Core Algorithm)
+- `HyperKB` - Knowledge base with embeddings
+- `SCPProber.probe(text)` - Main verification entry point
+- `Verdict` - Enum: PASS, SOFT_PASS, FAIL, CONTRADICT, UNKNOWN
+
+### benchmark.py (Test Runner)
+- `run_algorithm_benchmark(AlgClass, TEST_SETS, verbose)` - Run one algorithm
+- `ALGORITHMS` dict - All available algorithms
+- `IMPLEMENTATION_GUIDANCE` dict - Fix instructions per failure type
+
+### verified_memory.py (Caching)
+- `HallucinationProver.prove(text)` - Verify with provenance
+- `VerifiedMemory` - Cache layer with persistence
+
+## TESTING GUIDANCE
+
+When adding new tests:
+1. Add to `solution/test_scp.py` following existing patterns
+2. Use descriptive test names: `test_<what>_<expected_behavior>`
+3. Include docstring explaining the test case
+4. Group related tests in classes: `class Test<Feature>:`
+
+When adding new benchmark test cases:
+1. Edit `TEST_FALSE_ATTRIBUTION`, `TEST_CONTRADICTIONS`, or `TEST_FABRICATIONS` in `benchmark.py`
+2. Format: `(claim_text, is_true, HallucinationType.TYPE)`
+
+## COMMIT MESSAGE FORMAT
+
+All commits should follow:
+```
+[Opus4.5] <verb>: <description>
+
+- Detail 1
+- Detail 2
+```
+
+Examples:
+- `[Opus4.5] Fix: Subject-aware matching for false attribution`
+- `[Opus4.5] Add: Born_in predicate to Wikidata verifier`
+- `[Opus4.5] Refactor: Move all code to solution/ folder`
+
+## EXTERNAL DEPENDENCIES
+
+| Dependency | Purpose | Required |
+|------------|---------|----------|
+| networkx | Graph operations | Yes |
+| numpy | Vector math | Yes |
+| pytest | Testing | Yes (dev) |
+| sentence-transformers | Better embeddings | No (optional) |
+| KnowShowGo server | Fuzzy KB | No (future) |
+| OpenAI API key | Real LLM judge | No (mock available) |
+
+## DO NOT
+
+- Do not add production deployment configs without confirmation
+- Do not assume frameworks without checking existing patterns
+- Do not modify `docs/opus.txt` directly - append only
+- Do not change test expectations without documenting why
+- Do not add new dependencies without updating requirements.txt
+
+## WHERE TO ADD NOTES
+
+- Development decisions: `docs/opus.txt` (append)
+- Implementation plans: `docs/implementation_roadmap.md`
+- KnowShowGo integration: `docs/knowshowgo_integration_spec.md`
+- General documentation: `README.md`
+
+## QUICK COMMANDS
+
+```bash
+# Run all benchmarks
+cd solution && python3 benchmark.py
+
+# Run with verbose output (shows what to fix)
+cd solution && python3 benchmark.py --verbose
+
+# Run unit tests
+cd solution && python3 -m pytest test_scp.py -v
+
+# Export results to markdown
+cd solution && python3 benchmark.py --export
+```
