@@ -4,6 +4,10 @@
 # AI Assistant: Claude Opus 4.5 (Anthropic)
 # Last Updated: 2026-01-14
 
+## QUICK REFERENCE
+
+For full documentation, see: `docs/project_overview.md`
+
 ## REPOSITORY OVERVIEW
 
 This repository implements hallucination detection algorithms for verifying LLM outputs.

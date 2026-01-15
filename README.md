@@ -8,39 +8,44 @@ A comprehensive toolkit for detecting hallucinations in Large Language Model (LL
 
 ---
 
-## Table of Contents
-
-1. [Quick Start](#quick-start)
-2. [Project Structure](#project-structure)
-3. [Python File Format](#python-file-format)
-4. [Console Output Format](#console-output-format)
-5. [Module Contents](#module-contents)
-6. [Benchmark Results](#benchmark-results)
-7. [Hallucination Types](#hallucination-types)
-8. [Algorithm Details](#algorithm-details)
-9. [Running Tests](#running-tests)
-10. [Environment Variables](#environment-variables)
-11. [For AI Agents](#for-ai-agents)
-
----
-
 ## Quick Start
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Run benchmark suite (shows all algorithms + coverage)
+# Run benchmark (shows all algorithms + rankings)
 cd solution && python3 benchmark.py
 
-# Run with verbose output (shows each test + what to fix)
+# Run with verbose output (shows each test + implementation guidance)
 cd solution && python3 benchmark.py --verbose
-
-# Export results to markdown
-cd solution && python3 benchmark.py --export
 
 # Run unit tests (53 tests)
 cd solution && python3 -m pytest test_scp.py -v
+```
+
+---
+
+## Current Status
+
+### Algorithm Rankings (66 test cases)
+
+| Rank | Algorithm | Accuracy | Score | Latency | Status |
+|------|-----------|----------|-------|---------|--------|
+| 1 | **SCP** | 67% | 69/100 | 4.1ms | ✅ MODERATE |
+| 2 | **VerifiedMemory** | 64% | 66/100 | 0.6ms | ✅ MODERATE |
+| 3 | Wikidata | 21% | 20/100 | 130ms | ⚠️ MINIMAL |
+| 4 | LLM-Judge | 8% | 7/100 | ~200ms | 🔶 Mock |
+| 5 | Self-Consistency | 8% | 7/100 | ~500ms | 🔶 Mock |
+| 6 | KnowShowGo | N/A | 0/100 | N/A | ❌ Unavailable |
+
+### Detection by Hallucination Type (SCP)
+
+```
+true_fact       ██████░░░░   60% (21/35)
+false_attr      ███░░░░░░░   38% (5/13)   ← Needs fix
+contradiction   ██████████  100% (9/9)    ✓
+fabrication     ██████████  100% (9/9)    ✓
 ```
 
 ---
@@ -49,410 +54,124 @@ cd solution && python3 -m pytest test_scp.py -v
 
 ```
 scp_alg_test/
+├── solution/                    # ALL CODE LIVES HERE
+│   ├── scp.py                  # Core SCP algorithm (BEST: 67%)
+│   ├── verified_memory.py      # Caching layer (64%)
+│   ├── wikidata_verifier.py    # External KB (21%)
+│   ├── hallucination_strategies.py  # LLM strategies (mock)
+│   ├── ksg.py                  # KnowShowGo (unavailable)
+│   ├── benchmark.py            # Main benchmark suite
+│   └── test_scp.py             # 53 unit tests
 │
-├── solution/                         # ALL CODE LIVES HERE
-│   ├── __init__.py                  # Package exports (HyperKB, SCPProber, etc.)
-│   ├── scp.py                       # Core SCP algorithm - GOOD coverage (85/100)
-│   ├── wikidata_verifier.py         # Wikidata API integration - WEAK (38/100)
-│   ├── hallucination_strategies.py  # LLM-based strategies (Judge, Consistency)
-│   ├── verified_memory.py           # Caching layer - GOOD coverage (70/100)
-│   ├── ksg.py                       # KnowShowGo integration (ground truth + memory)
-│   ├── benchmark.py                 # MAIN BENCHMARK SUITE
-│   └── test_scp.py                  # Unit tests (53 tests)
+├── docs/
+│   ├── project_overview.md     # Full project documentation
+│   ├── implementation_roadmap.md
+│   └── ...
 │
-├── docs/                            # Documentation
-│   ├── opus.txt                     # AI decision log (append-only)
-│   ├── implementation_roadmap.md    # Prioritized fixes and time estimates
-│   ├── knowshowgo_integration_spec.md  # KnowShowGo API spec
-│   ├── external_dependencies.txt    # External requirements
-│   ├── ksg_architecture.py          # KnowShowGo reference architecture
-│   └── neuro_symbolic_architecture.py  # Neuro-symbolic design notes
-│
-├── README.md                        # This file
-├── requirements.txt                 # Python dependencies
-├── .gitignore                       # Git ignore patterns
-└── .agent-instructions              # Instructions for AI coding agents
+├── README.md                   # This file
+└── .agent-instructions         # AI agent guidance
 ```
-
-### What Each File Does
-
-| File | Purpose | Status |
-|------|---------|--------|
-| `solution/scp.py` | Core hallucination prover using semantic embeddings | ✅ GOOD |
-| `solution/wikidata_verifier.py` | Query Wikidata SPARQL for verification | ⚠️ WEAK |
-| `solution/hallucination_strategies.py` | LLM-as-Judge, Self-Consistency | 🔶 Mock |
-| `solution/verified_memory.py` | Cache verified facts with provenance | ✅ GOOD |
-| `solution/ksg.py` | KnowShowGo integration (ground truth + memory) | ❌ Unavailable |
-| `solution/benchmark.py` | Run all algorithms, show coverage + fixes | ✅ Ready |
-| `solution/test_scp.py` | 53 unit tests for core algorithm | ✅ Passing |
 
 ---
 
-## Python File Format
+## Test Coverage
 
-All Python files in this project follow this format:
+| Test Set | Tests | Description |
+|----------|-------|-------------|
+| False Attribution | 16 | "Edison invented telephone" → FAIL |
+| Contradictions | 16 | "Einstein born in France" → FAIL |
+| Fabrications | 16 | "Curie invented smartphone" → FAIL |
+| Edge Cases | 8 | Partial matches, synonyms, negations |
+| Domain Coverage | 10 | Science, tech, history, geography, arts |
+| **TOTAL** | **66** | |
+
+---
+
+## Algorithms
+
+### SCP (Symbolic Consistency Probing) - BEST
 
 ```python
-#!/usr/bin/env python3
-"""
-Module Title
-============
+from solution.scp import HyperKB, SCPProber, RuleBasedExtractor, HashingEmbeddingBackend
 
-Author: Lehel Kovach
-AI Assistant: Claude Opus 4.5 (Anthropic)
-
-Description of what this module does.
-
-Usage:
-    from solution.module import ClassName
-    obj = ClassName()
-"""
-
-# =============================================================================
-# Standard library imports
-# =============================================================================
-import os
-import sys
-from typing import List, Dict, Optional
-
-# =============================================================================
-# Third-party imports
-# =============================================================================
-import numpy as np
-import networkx as nx
-
-# =============================================================================
-# Local imports (within solution/)
-# =============================================================================
-from scp import HyperKB, Verdict
-
-# Module metadata
-__author__ = "Lehel Kovach"
-__ai_assistant__ = "Claude Opus 4.5"
-
-
-# =============================================================================
-# SECTION NAME IN CAPS
-# =============================================================================
-
-class ClassName:
-    """
-    Brief class description.
-    
-    Attributes:
-        attr_name (type): Description of attribute.
-    
-    Example:
-        >>> obj = ClassName()
-        >>> result = obj.method("input")
-        >>> print(result)
-    """
-    
-    def __init__(self, param: str = "default"):
-        """Initialize with parameters."""
-        self.param = param
-    
-    def method(self, input_text: str) -> str:
-        """
-        Method description.
-        
-        Args:
-            input_text: What this parameter does.
-        
-        Returns:
-            Description of return value.
-        
-        Raises:
-            ValueError: When input is invalid.
-        """
-        return input_text.upper()
-```
-
-### Key Conventions
-
-1. **Module docstring** at top with title, author, description, usage
-2. **Section separators** using `# ===...` with CAPS titles
-3. **Type hints** on all function signatures
-4. **Docstrings** on all public classes and methods
-5. **`__author__` and `__ai_assistant__`** metadata
-
----
-
-## Console Output Format
-
-### Benchmark Output Structure
-
-```
-======================================================================
-HALLUCINATION DETECTION BENCHMARK SUITE
-Author: Lehel Kovach | AI: Claude Opus 4.5
-======================================================================
-
-Running benchmarks with 3 test sets...
-
-======================================================================
-ALGORITHM: SCP
-======================================================================
-Description: Local KB verification using semantic embeddings (~10ms, 0 API calls)
-Status: available - Ready with local KB
-
-  Test Set: False Attribution Detection
-  --------------------------------------------------
-  Results: 5/6 (83%)
-  Avg Latency: 0.7ms
-
-  Detection Coverage (from tests):
-  --------------------------------------------------
-  true_fact       ███████░░░   78% (7/9)
-  false_attr      ██████░░░░   67% (2/3)
-  contradiction   ██████████  100% (3/3)
-  fabrication     ██████████  100% (3/3)
-
-  Overall Coverage: GOOD (score: 85/100)
-```
-
-### Verbose Output (with `--verbose`)
-
-```
-  ✓ [true_fact   ] Alexander Graham Bell invented the telep...
-      Expected: TRUE, Got: TRUE (PASS)
-  ✗ [false_attr  ] Nikola Tesla discovered radium....
-      Expected: FALSE, Got: TRUE (SOFT_PASS)
-      ⚠️  Detect wrong subject for correct predicate/object
-      💡 Example: "Edison invented telephone" should fail (Bell did)
-```
-
-### Symbols Used
-
-| Symbol | Meaning |
-|--------|---------|
-| ✓ | Test passed |
-| ✗ | Test failed |
-| ⚠️ | Warning / needs attention |
-| 📋 | List or checklist |
-| 🔧 | Fix needed |
-| 🎯 | Priority item |
-| █ | Progress bar filled |
-| ░ | Progress bar empty |
-
-### Implementation Guidance Output
-
-```
-======================================================================
-🎯 PRIORITY ACTION ITEMS
-======================================================================
-
-Priority Task                                          Time       Action
---------------------------------------------------------------------------------
-HIGH     Fix false attribution (8 failures)            1-2 hours  Update scp.py
-HIGH     Fix contradiction detection (7 failures)      1-2 hours  Expand KB facts
-MEDIUM   Deploy KnowShowGo server                      4-8 hours  See docs/
-```
-
----
-
-## Module Contents
-
-### solution/scp.py - Core Algorithm
-
-**Classes:**
-- `Verdict` - Enum: PASS, SOFT_PASS, FAIL, CONTRADICT, UNKNOWN
-- `Claim` - Frozen dataclass: subject, predicate, object
-- `ProbeResult` - Result for single claim verification
-- `SCPReport` - Full verification report with all claims
-- `HyperKB` - Hypergraph knowledge base with embeddings
-- `SCPProber` - Main prober class
-
-**Key Methods:**
-```python
-# Create knowledge base with facts
 kb = HyperKB(embedding_backend=HashingEmbeddingBackend(dim=512))
-kb.add_facts_bulk([
-    ("Bell", "invented", "telephone"),
-    ("Einstein", "discovered", "relativity"),
-])
+kb.add_facts_bulk([("Bell", "invented", "telephone")])
 
-# Verify text
 prober = SCPProber(kb=kb, extractor=RuleBasedExtractor())
-report = prober.probe("Edison invented the telephone.")
+report = prober.probe("Edison invented the telephone")
 # report.results[0].verdict == Verdict.CONTRADICT
 ```
 
-### solution/benchmark.py - Test Suite
+**Strengths:** Fast (~4ms), no external API, best accuracy (67%)  
+**Weaknesses:** Requires populated KB, 38% false attribution detection
 
-**Key Exports:**
-- `ALGORITHMS` - Dict of all algorithm classes
-- `TEST_SETS` - Test data organized by hallucination type
-- `IMPLEMENTATION_GUIDANCE` - Fix instructions per failure type
-- `run_algorithm_benchmark()` - Run benchmarks for one algorithm
-
-**Command Line:**
-```bash
-python3 benchmark.py                    # All algorithms
-python3 benchmark.py --algorithm scp    # Single algorithm
-python3 benchmark.py --verbose          # Detailed output
-python3 benchmark.py --export           # Save to markdown
-```
-
-### solution/verified_memory.py - Caching Layer
-
-**Classes:**
-- `HallucinationProver` - Wraps SCP with standard interface
-- `VerifiedMemory` - Persistent cache with provenance
-- `VerificationStatus` - Enum: VERIFIED, REFUTED, UNVERIFIABLE
+### Verified Memory (Caching)
 
 ```python
+from solution.verified_memory import HallucinationProver
+
 prover = HallucinationProver()
-status, provenance, claim = prover.prove("Bell invented the telephone.")
+status, provenance, claim = prover.prove("Bell invented the telephone")
 # status == VerificationStatus.VERIFIED
-# provenance.source == "local_kb"
 ```
 
----
-
-## Benchmark Results
-
-*Generated: 2026-01-14*
-
-### Algorithm Comparison
-
-| Algorithm | Status | Accuracy | Coverage | Score | Latency |
-|-----------|--------|----------|----------|-------|---------|
-| **SCP** | ✅ available | **83%** | GOOD | 85/100 | 2.4ms |
-| **VerifiedMemory** | ✅ available | 72% | GOOD | 70/100 | 0.3ms |
-| **Wikidata** | ✅ available | 39% | WEAK | 38/100 | ~200ms |
-| **LLM-Judge** | ⚠️ mock | 22% | MINIMAL | 23/100 | ~200ms |
-| **Self-Consistency** | ⚠️ mock | 22% | MINIMAL | 23/100 | ~500ms |
-| **KnowShowGo** | ❌ unavailable | N/A | N/A | 0/100 | N/A |
-
-### Coverage Levels
-
-| Level | Score | Meaning |
-|-------|-------|---------|
-| **EXCELLENT** | 90+ | Detects all hallucination types reliably |
-| **GOOD** | 70-89 | Reliable for most claim types |
-| **MODERATE** | 50-69 | Partial detection, some blind spots |
-| **WEAK** | 30-49 | Limited reliability |
-| **MINIMAL** | <30 | Not recommended for production |
+**Strengths:** Fast caching (0.6ms), provenance tracking  
+**Weaknesses:** Depends on underlying KB quality
 
 ---
 
-## Hallucination Types
+## Documentation
 
-| Type | Description | Example | Detection Goal |
-|------|-------------|---------|----------------|
-| **TRUE_FACT** | Correct, verifiable | "Bell invented telephone" | Should PASS |
-| **FALSE_ATTRIBUTION** | Wrong subject | "Edison invented telephone" | Should FAIL |
-| **CONTRADICTION** | Conflicts with KB | "Einstein born in France" | Should FAIL |
-| **FABRICATION** | Completely made up | "Curie invented smartphone" | Should FAIL |
-
----
-
-## Algorithm Details
-
-### 1. SCP (Symbolic Consistency Probing) - BEST
-
-**How it works:**
-1. Extract claims from text using rule-based patterns
-2. Convert claims to semantic embeddings
-3. Search knowledge base for similar facts
-4. Return verdict based on match strength
-
-**Strengths:** Fast (~3ms), no external API, good accuracy
-**Weaknesses:** Requires populated KB, limited to supported patterns
-
-### 2. Wikidata Verifier
-
-**How it works:**
-1. Parse claim into subject/predicate/object
-2. Map predicate to Wikidata property ID
-3. Query Wikidata SPARQL endpoint
-4. Compare results
-
-**Strengths:** Large external KB (100M+ facts)
-**Weaknesses:** ~200ms latency, limited predicate support
-
-### 3. Verified Memory (Caching)
-
-**How it works:**
-1. Check local cache for verified claim
-2. If not found, verify with underlying prover
-3. Store result with provenance
-4. Return cached result for future queries
-
-**Strengths:** Fast repeated queries, provenance tracking
-**Weaknesses:** Depends on underlying prover quality
-
----
-
-## Running Tests
-
-### Unit Tests (53 tests)
-
-```bash
-cd solution
-python3 -m pytest test_scp.py -v
-
-# Run specific test class
-python3 -m pytest test_scp.py::TestSCPProber -v
-
-# Run with coverage
-python3 -m pytest test_scp.py --cov=scp --cov-report=html
-```
-
-### Benchmark Suite
-
-```bash
-cd solution
-
-# Full benchmark (all algorithms)
-python3 benchmark.py
-
-# Single algorithm
-python3 benchmark.py --algorithm scp
-python3 benchmark.py --algorithm wikidata
-
-# Verbose (shows each test result + fix guidance)
-python3 benchmark.py --verbose
-
-# Export to markdown
-python3 benchmark.py --export
-```
-
----
-
-## Environment Variables
-
-| Variable | Purpose | Required |
-|----------|---------|----------|
-| `OPENAI_API_KEY` | Enable real LLM-as-Judge | No (mock available) |
-| `ANTHROPIC_API_KEY` | Alternative LLM API | No |
-| `KSG_URL` | KnowShowGo server URL | No (future) |
+| Document | Description |
+|----------|-------------|
+| [`docs/project_overview.md`](docs/project_overview.md) | **Full project documentation** - scope, goals, test coverage, status |
+| [`docs/implementation_roadmap.md`](docs/implementation_roadmap.md) | Prioritized fixes with time estimates |
+| [`.agent-instructions`](.agent-instructions) | AI agent conventions and guidance |
+| [`docs/knowshowgo_integration_spec.md`](docs/knowshowgo_integration_spec.md) | KnowShowGo API specification |
 
 ---
 
 ## For AI Agents
 
-See `.agent-instructions` for comprehensive guidance on:
-- Project structure and conventions
-- File format standards
-- How to run tests and benchmarks
-- Current coverage gaps and fixes
-- Commit message format
-- What NOT to do
+See [`.agent-instructions`](.agent-instructions) for detailed guidance.
 
-### First Steps for Any Agent
+### First Steps
 
 1. Run `cd solution && python3 benchmark.py` to see current status
-2. Run `cd solution && python3 -m pytest test_scp.py -v` to verify tests pass
-3. Read `docs/implementation_roadmap.md` for prioritized work
-4. Check `.agent-instructions` for detailed conventions
+2. Run `cd solution && python3 benchmark.py --verbose` to see what needs fixing
+3. Read [`docs/project_overview.md`](docs/project_overview.md) for full context
+4. Check [`docs/implementation_roadmap.md`](docs/implementation_roadmap.md) for prioritized tasks
+
+### Priority Fixes
+
+| Priority | Task | Effort |
+|----------|------|--------|
+| HIGH | Fix SCP false attribution | 1-2 hours |
+| HIGH | Add Wikidata predicates | 1-2 hours |
+| MEDIUM | Enable real LLM | 30 min |
+| MEDIUM | Deploy KnowShowGo | 4-8 hours |
 
 ---
 
-## License
+## Environment Variables
 
-MIT License
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | Enable real LLM-as-Judge |
+| `ANTHROPIC_API_KEY` | Alternative LLM API |
+| `KSG_URL` | KnowShowGo server URL |
+
+---
+
+## Coverage Levels
+
+| Level | Score | Meaning |
+|-------|-------|---------|
+| **EXCELLENT** | 90%+ | Detects all hallucination types reliably |
+| **GOOD** | 70-89% | Reliable for most claim types |
+| **MODERATE** | 50-69% | Partial detection, some blind spots |
+| **WEAK** | 30-49% | Limited reliability |
+| **MINIMAL** | <30% | Not recommended for production |
 
 ---
 
@@ -461,3 +180,7 @@ MIT License
 - **Author:** Lehel Kovach
 - **AI Assistant:** Claude Opus 4.5 (Anthropic)
 - **All commits tagged:** `[Opus4.5]`
+
+## License
+
+MIT License
