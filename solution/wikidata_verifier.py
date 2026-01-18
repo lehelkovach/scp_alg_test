@@ -15,6 +15,7 @@ Usage:
 
 import json
 import time
+import re
 import urllib.request
 import urllib.parse
 from dataclasses import dataclass, field
@@ -65,19 +66,24 @@ class WikidataVerifier:
     
     # Common predicates mapping
     PREDICATE_MAP = {
-        "invented": "P61",      # discoverer or inventor
-        "discovered": "P61",    # discoverer or inventor
-        "created": "P170",      # creator
-        "founded": "P112",      # founded by
-        "born in": "P19",       # place of birth
-        "born": "P569",         # date of birth
-        "died": "P570",         # date of death
-        "located in": "P131",   # located in administrative entity
-        "capital of": "P36",    # capital
-        "wrote": "P50",         # author
-        "directed": "P57",      # director
-        "CEO of": "P169",       # chief executive officer
-        "spouse": "P26",        # spouse
+        "invented": {"property": "P61", "direction": "object_to_subject"},
+        "discovered": {"property": "P61", "direction": "object_to_subject"},
+        "created": {"property": "P170", "direction": "object_to_subject"},
+        "created by": {"property": "P170", "direction": "subject_to_object"},
+        "founded": {"property": "P112", "direction": "object_to_subject"},
+        "founded by": {"property": "P112", "direction": "subject_to_object"},
+        "born in": {"property": "P19", "direction": "subject_to_object"},
+        "born": {"property": "P569", "direction": "subject_to_object"},
+        "died in": {"property": "P20", "direction": "subject_to_object"},
+        "died": {"property": "P570", "direction": "subject_to_object"},
+        "located in": {"property": "P131", "direction": "subject_to_object"},
+        "capital of": {"property": "P36", "direction": "object_to_subject"},
+        "wrote": {"property": "P50", "direction": "object_to_subject"},
+        "written by": {"property": "P50", "direction": "subject_to_object"},
+        "directed": {"property": "P57", "direction": "object_to_subject"},
+        "directed by": {"property": "P57", "direction": "subject_to_object"},
+        "ceo of": {"property": "P169", "direction": "object_to_subject"},
+        "spouse of": {"property": "P26", "direction": "subject_to_object"},
     }
     
     def __init__(self, cache_file: str = "./wikidata_cache.json"):
@@ -127,6 +133,24 @@ class WikidataVerifier:
             print(f"Wikidata query error: {e}")
             return []
     
+    def _normalize_predicate(self, predicate: str) -> str:
+        pred = predicate.strip().lower().replace("_", " ")
+        pred = re.sub(r"\s+", " ", pred)
+        pred = re.sub(r"^(is|was|were)\s+", "", pred)
+        pred = re.sub(r"^the\s+", "", pred)
+        return pred.strip()
+
+    def _normalize_label(self, label: str) -> str:
+        text = label.strip().lower()
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r'[\"\'`,.;:!?()\[\]{}]', "", text)
+        return text.strip()
+
+    def _labels_match(self, a: str, b: str) -> bool:
+        a_norm = self._normalize_label(a)
+        b_norm = self._normalize_label(b)
+        return a_norm == b_norm or a_norm in b_norm or b_norm in a_norm
+
     def _search_entity(self, name: str) -> Optional[str]:
         """Search for Wikidata entity ID by name."""
         # Use Wikidata search API
@@ -145,6 +169,17 @@ class WikidataVerifier:
         except Exception:
             pass
         
+        return None
+
+    def _search_entity_with_variants(self, name: str) -> Optional[str]:
+        variants = [name, f"the {name}", name.replace("the ", "")]
+        for variant in variants:
+            cleaned = variant.strip()
+            if not cleaned:
+                continue
+            entity_id = self._search_entity(cleaned)
+            if entity_id:
+                return entity_id
         return None
     
     def _get_entity_claims(self, entity_id: str, property_id: str) -> List[Dict]:
@@ -170,7 +205,12 @@ class WikidataVerifier:
         """
         return self._sparql_query(query)
     
-    def _verify_invention(self, subject: str, obj: str) -> Tuple[VerificationStatus, float, List[Dict], str]:
+    def _verify_invention(
+        self,
+        subject: str,
+        obj: str,
+        predicate_label: str,
+    ) -> Tuple[VerificationStatus, float, List[Dict], str]:
         """Verify an invention/discovery claim."""
         # Search for the object (the invention)
         results = self._find_inventor(obj)
@@ -201,7 +241,7 @@ class WikidataVerifier:
                     VerificationStatus.VERIFIED,
                     0.95,
                     results,
-                    f"Wikidata confirms: {inventor} invented {obj}"
+                    f"Wikidata confirms: {inventor} {predicate_label} {obj}"
                 )
         
         # No match - it's a refutation
@@ -210,7 +250,107 @@ class WikidataVerifier:
             VerificationStatus.REFUTED,
             0.90,
             results,
-            f"Wikidata shows {actual_inventor} invented {obj}, not {subject}"
+            f"Wikidata shows {actual_inventor} {predicate_label} {obj}, not {subject}"
+        )
+
+    def _verify_property(
+        self,
+        subject: str,
+        predicate: str,
+        obj: str,
+    ) -> Tuple[VerificationStatus, float, List[Dict], str]:
+        predicate_key = self._normalize_predicate(predicate)
+        mapping = self.PREDICATE_MAP.get(predicate_key)
+        if not mapping:
+            return (
+                VerificationStatus.UNVERIFIABLE,
+                0.5,
+                [],
+                f"Predicate '{predicate}' not yet supported",
+            )
+
+        property_id = mapping["property"]
+        direction = mapping.get("direction", "subject_to_object")
+
+        if direction == "subject_to_object":
+            subject_id = self._search_entity_with_variants(subject)
+            if not subject_id:
+                return (
+                    VerificationStatus.UNVERIFIABLE,
+                    0.5,
+                    [],
+                    f"Could not find '{subject}' in Wikidata",
+                )
+
+            results = self._get_entity_claims(subject_id, property_id)
+            if not results:
+                return (
+                    VerificationStatus.UNVERIFIABLE,
+                    0.5,
+                    [],
+                    f"No Wikidata values for '{subject}' and predicate '{predicate_key}'",
+                )
+
+            for result in results:
+                value = result.get("valueLabel", {}).get("value", "")
+                if value and self._labels_match(obj, value):
+                    return (
+                        VerificationStatus.VERIFIED,
+                        0.90,
+                        results,
+                        f"Wikidata confirms: {subject} {predicate_key} {value}",
+                    )
+
+            actual_value = results[0].get("valueLabel", {}).get("value", "Unknown")
+            return (
+                VerificationStatus.REFUTED,
+                0.90,
+                results,
+                f"Wikidata shows {subject} {predicate_key} {actual_value}, not {obj}",
+            )
+
+        if direction == "object_to_subject":
+            object_id = self._search_entity_with_variants(obj)
+            if not object_id:
+                return (
+                    VerificationStatus.UNVERIFIABLE,
+                    0.5,
+                    [],
+                    f"Could not find '{obj}' in Wikidata",
+                )
+
+            results = self._get_entity_claims(object_id, property_id)
+            if not results:
+                return (
+                    VerificationStatus.UNVERIFIABLE,
+                    0.5,
+                    [],
+                    f"No Wikidata values for '{obj}' and predicate '{predicate_key}'",
+                )
+
+            for result in results:
+                value = result.get("valueLabel", {}).get("value", "")
+                if value and self._labels_match(subject, value):
+                    return (
+                        VerificationStatus.VERIFIED,
+                        0.90,
+                        results,
+                        f"Wikidata confirms: {obj} {predicate_key} {value}",
+                    )
+
+            actual_value = results[0].get("valueLabel", {}).get("value", "Unknown")
+            return (
+                VerificationStatus.REFUTED,
+                0.90,
+                results,
+                f"Wikidata shows {obj} {predicate_key} {actual_value}, not {subject}",
+            )
+
+        return (
+            VerificationStatus.UNVERIFIABLE,
+            0.5,
+            [],
+            f"Predicate direction '{direction}' not supported",
         )
     
     def _extract_claim_parts(self, claim: str) -> Optional[Tuple[str, str, str]]:
@@ -218,15 +358,22 @@ class WikidataVerifier:
         import re
         
         patterns = [
-            r"^(.+?)\s+(invented|discovered|created|founded|wrote)\s+(.+?)\.?$",
-            r"^(.+?)\s+(was born in|is located in|is the capital of)\s+(.+?)\.?$",
+            r"^(.+?)\s+(invented|discovered|created|founded|wrote|directed)\s+(.+?)\.?$",
+            r"^(.+?)\s+(?:was|were)\s+(created by|founded by|written by|directed by)\s+(.+?)\.?$",
+            r"^(.+?)\s+(?:was|were)\s+(born in|died in)\s+(.+?)\.?$",
+            r"^(.+?)\s+(?:was|were)\s+(born|died)\s+(.+?)\.?$",
+            r"^(.+?)\s+(?:is|was|were)\s+(located in)\s+(.+?)\.?$",
+            r"^(.+?)\s+(?:is|was|were)\s+the\s+(capital of)\s+(.+?)\.?$",
+            r"^(.+?)\s+(?:is|was|were)\s+the\s+(ceo of)\s+(.+?)\.?$",
+            r"^(.+?)\s+(?:is|was|were)\s+the\s+(spouse of)\s+(.+?)\.?$",
             r"^(.+?)\s+(is|was)\s+(.+?)\.?$",
         ]
         
         for pattern in patterns:
             match = re.match(pattern, claim, re.IGNORECASE)
             if match:
-                return match.group(1).strip(), match.group(2).strip().lower(), match.group(3).strip()
+                predicate = self._normalize_predicate(match.group(2))
+                return match.group(1).strip(), predicate, match.group(3).strip()
         
         return None
     
@@ -265,10 +412,13 @@ class WikidataVerifier:
             return result
         
         subject, predicate, obj = parts
+        predicate = self._normalize_predicate(predicate)
         
         # Route to appropriate verification method
-        if predicate in ["invented", "discovered", "created"]:
-            status, confidence, facts, reason = self._verify_invention(subject, obj)
+        if predicate in ["invented", "discovered"]:
+            status, confidence, facts, reason = self._verify_invention(subject, obj, predicate)
+        elif predicate in self.PREDICATE_MAP:
+            status, confidence, facts, reason = self._verify_property(subject, predicate, obj)
         else:
             # Generic verification (TODO: implement more predicates)
             status = VerificationStatus.UNVERIFIABLE
