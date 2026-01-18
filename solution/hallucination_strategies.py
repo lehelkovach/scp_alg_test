@@ -14,8 +14,12 @@ This module provides implementations and benchmarks for each.
 """
 
 from __future__ import annotations
+import json
+import os
 import time
 import hashlib
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Callable
 from enum import Enum
@@ -28,6 +32,90 @@ from scp import (
 )
 if EMBEDDINGS_AVAILABLE:
     from scp import SentenceTransformerBackend
+
+
+class OpenAIChatClient:
+    """Minimal OpenAI chat client using standard library only."""
+
+    DEFAULT_BASE_URL = "https://api.openai.com/v1/chat/completions"
+    DEFAULT_MODEL = "gpt-4o-mini"
+    DEFAULT_SYSTEM_PROMPT = (
+        "You are a careful fact-checker. Follow the user's format exactly."
+    )
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        *,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        timeout: int = 20,
+        system_prompt: Optional[str] = None,
+    ):
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set.")
+        self.model = model or os.getenv("OPENAI_MODEL", self.DEFAULT_MODEL)
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL", self.DEFAULT_BASE_URL)
+        self.timeout = timeout
+        self.system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
+
+    def complete(self, prompt: str) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.0,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.base_url,
+            data=data,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"OpenAI API error {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"OpenAI API request failed: {exc.reason}") from exc
+
+        data = json.loads(body)
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError("OpenAI response missing choices.")
+        message = choices[0].get("message", {})
+        content = message.get("content")
+        if not content:
+            raise RuntimeError("OpenAI response missing content.")
+        return content.strip()
+
+
+def get_openai_judge_fn(
+    *,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+    timeout: int = 20,
+    system_prompt: Optional[str] = None,
+) -> Callable[[str], str]:
+    client = OpenAIChatClient(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        timeout=timeout,
+        system_prompt=system_prompt,
+    )
+    return client.complete
 
 
 class Strategy(Enum):
@@ -584,6 +672,16 @@ def mock_llm(prompt: str) -> str:
         return "VERDICT: UNCERTAIN\nCONFIDENCE: 0.50\nREASONING: Cannot verify this claim."
 
 
+def resolve_judge_fn() -> Callable[[str], str]:
+    """Resolve judge function from env or fall back to mock."""
+    if os.getenv("OPENAI_API_KEY"):
+        try:
+            return get_openai_judge_fn()
+        except Exception as exc:
+            print(f"Warning: {exc} Falling back to mock_llm.")
+    return mock_llm
+
+
 def benchmark_strategies():
     """Benchmark different strategies."""
     print("=" * 70)
@@ -593,11 +691,12 @@ def benchmark_strategies():
     # Setup
     kb = create_sample_kb()
     
+    judge_fn = resolve_judge_fn()
     strategies = {
         "1. Local KB (fastest)": LocalKBStrategy(kb),
-        "2. LLM Judge": LLMJudgeStrategy(mock_llm),
-        "3. Self-Consistency": SelfConsistencyStrategy(mock_llm, num_samples=3),
-        "4. Hybrid (recommended)": HybridStrategy(kb, fallback_fn=mock_llm),
+        "2. LLM Judge": LLMJudgeStrategy(judge_fn),
+        "3. Self-Consistency": SelfConsistencyStrategy(judge_fn, num_samples=3),
+        "4. Hybrid (recommended)": HybridStrategy(kb, fallback_fn=judge_fn),
     }
     
     test_claims = [
