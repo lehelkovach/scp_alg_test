@@ -547,6 +547,44 @@ class HyperKB:
         matches.sort(key=lambda x: x[0], reverse=True)
         return matches[:top_k]
 
+    def find_false_attributions(
+        self,
+        claim: Claim,
+        top_k: int = 3,
+        predicate_threshold: float = 0.85,
+        object_threshold: float = 0.85,
+        subject_max: float = 0.6,
+    ) -> List[Tuple[float, Tuple[str, str, str], str, float, float, float]]:
+        """
+        Find likely false attributions:
+        predicate+object match strongly, but subject mismatches.
+        """
+        matches: List[Tuple[float, Tuple[str, str, str], str, float, float, float]] = []
+        claim_subject_norm = self._norm_text(claim.subject)
+        claim_pred = self._canon_predicate(claim.predicate)
+
+        for s, p, o, r_id in self.iter_facts():
+            if self._norm_text(s) == claim_subject_norm:
+                continue
+
+            p_sim = self.backend.text_similarity(claim_pred, self._canon_predicate(p))
+            if p_sim < predicate_threshold:
+                continue
+
+            o_sim = self.backend.text_similarity(claim.obj, o)
+            if o_sim < object_threshold:
+                continue
+
+            s_sim = self.backend.text_similarity(claim.subject, s)
+            if s_sim >= subject_max:
+                continue
+
+            score = (0.55 * p_sim) + (0.45 * o_sim)
+            matches.append((score, (s, p, o), r_id, s_sim, p_sim, o_sim))
+
+        matches.sort(key=lambda x: x[0], reverse=True)
+        return matches[:top_k]
+
     def find_contradictions(self, claim: Claim) -> List[Tuple[str, str, str, str]]:
         contradictions: List[Tuple[str, str, str, str]] = []
         c_s = self._norm_text(claim.subject)
@@ -656,6 +694,29 @@ class SCPProber:
                     reason=f"Contradicts {len(contradictions)} fact(s) in KB.",
                     metadata={"contradictions": contradictions},
                 )
+
+        false_attributions = self.kb.find_false_attributions(claim, top_k=1)
+        if false_attributions:
+            best_score, best_fact, best_rel_id, s_sim, p_sim, o_sim = false_attributions[0]
+            return ProbeResult(
+                claim=claim,
+                verdict=Verdict.FAIL,
+                score=0.0,
+                matched_facts=[best_fact],
+                proof_subgraph=self.kb.get_proof_subgraph([best_rel_id]),
+                reason=(
+                    "Predicate/object match but subject differs; "
+                    f"expected '{best_fact[0]}'."
+                ),
+                metadata={
+                    "match_type": "false_attribution",
+                    "relation_id": best_rel_id,
+                    "match_score": round(best_score, 4),
+                    "subject_similarity": round(s_sim, 4),
+                    "predicate_similarity": round(p_sim, 4),
+                    "object_similarity": round(o_sim, 4),
+                },
+            )
 
         soft_matches = self.kb.find_soft_matches(claim, top_k=3, threshold=self.soft_threshold)
         if soft_matches:
